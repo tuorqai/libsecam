@@ -25,6 +25,8 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      2.4     2023.11.19  Const chroma_loss, randomized chroma shift,
+//                          no negative chroma fire sign
 //      2.3     2023.11.18  Update 2, Revision 3 (less color loss on RGB-YUV)
 //      2.2     2023.11.18  Update 2, Revision 2 (added _filter_to_buffer())
 //      2.1     2023.11.18  Update 2, Revision 1
@@ -424,15 +426,15 @@ static void libsecam_apply_noise(double *line, int width, double amplitude)
 /**
  * Shifts scanline.
  */
-static void libsecam_apply_shift(double *line, int width, int range, double fill)
+static void libsecam_apply_shift(double *line, int width, int x0, int x1, int shift, double fill)
 {
-    if (range == 0) {
+    if (x0 == x1 || shift == 0) {
         return;
     }
 
-    for (int x = width - 1; x >= 0; x--) {
-        if ((x - range) >= 0) {
-            line[x] = line[x - range];
+    for (int x = (x1 - 1); x >= x0; x--) {
+        if ((x - shift) >= 0) {
+            line[x] = line[x - shift];
         } else {
             line[x] = fill;
         }
@@ -455,7 +457,7 @@ static void libsecam_apply_fire(double *line, size_t length, double chance, int 
 
             gain = force;
             fall = force / length;
-            sign = (libsecam_irand(0, 2) == 0) ? 1 : -1;
+            sign = 1; // used to be -1 or 1 randomly
 
             if (i > 0) {
                 line[i - 1] += (gain / 2.0) * sign;
@@ -486,7 +488,7 @@ libsecam_t *libsecam_init(int width, int height)
     }
 
     int const luma_loss = 1; // used to be 1 or 2 depending on horizontal resolution
-    int const chroma_loss = (height < 480) ? 4 : 8;
+    int const chroma_loss = 4; // used to be 4 or 8 depending on vertical resolution
 
     self->width = width;
     self->height = height;
@@ -557,8 +559,8 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         // [Update #2] This is used instead of "luma shift chance".
         if (self->options.horizontal_instability > 0) {
             double const d = v * (double) self->options.horizontal_instability;
-            libsecam_apply_shift(luma, luma_width, (d / self->luma_loss), 0.0);
-            libsecam_apply_shift(chroma, chroma_width, (d / self->chroma_loss), 0.5);
+            libsecam_apply_shift(luma, luma_width, 0, luma_width, (d / self->luma_loss), 0.0);
+            libsecam_apply_shift(chroma, chroma_width, 0, chroma_width, (d / self->chroma_loss), 0.5);
         }
 
         if (libsecam_chance(self->options.luma_loss_chance)) {
@@ -589,8 +591,15 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
             libsecam_apply_noise(chroma, chroma_width, 0.5);
         } else {
             if (libsecam_chance(self->options.chroma_shift_chance)) {
-                int range = libsecam_irand(1, (self->chroma_loss / 4) + 1);
-                libsecam_apply_shift(chroma, chroma_width, range, 0.5);
+                int x0 = v0 * chroma_width;
+                int x1 = x0 + v1 * chroma_width;
+
+                if (x1 >= chroma_width) {
+                    x1 = chroma_width;
+                }
+
+                int shift = libsecam_irand(1, 6);
+                libsecam_apply_shift(chroma, chroma_width, x0, x1, shift, 0.5);
             }
 
             libsecam_apply_noise(chroma, chroma_width, self->options.chroma_noise_factor * v);
