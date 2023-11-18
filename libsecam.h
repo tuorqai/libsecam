@@ -25,8 +25,9 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
-//      2.0         Update 2
-//      1.0         Initial release
+//      2.1     2023.11.18  Update 2, Revision 1
+//      2.0     2023.11.18  Update 2
+//      1.0     2023.02.08  Initial release
 //------------------------------------------------------------------------------
 
 #ifndef TUORQAI_LIBSECAM_H
@@ -413,7 +414,7 @@ static void libsecam_apply_fire(double *line, size_t length, double chance, int 
     double gain = 0;
     double fall = 0;
     double sign = 0;
-    double const force = 0.75;
+    double const force = 0.25 + (libsecam_frand() * 0.5);
 
     for (int i = 0; i < length; i++) {
         if (libsecam_chance(chance)) {
