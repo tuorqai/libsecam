@@ -25,6 +25,7 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      2.2     2023.11.18  Update 2, Revision 2 (added _filter_to_buffer())
 //      2.1     2023.11.18  Update 2, Revision 1
 //      2.0     2023.11.18  Update 2
 //      1.0     2023.02.08  Initial release
@@ -78,6 +79,7 @@ typedef struct libsecam_options
 
 libsecam_t *libsecam_init(int width, int height);
 void libsecam_close(libsecam_t *self);
+void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsigned char *dst);
 unsigned char const *libsecam_filter(libsecam_t *self, unsigned char const *src);
 libsecam_options_t *libsecam_options(libsecam_t *self);
 
@@ -287,7 +289,7 @@ static void libsecam_convert_frame(libsecam_t *self, unsigned char const *src)
  * Converts stored "internal representation" of an image back to
  * normal RGB image, which is stored in the 'buffer' array.
  */
-static void *libsecam_revert_frame(libsecam_t *self)
+static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
 {
     int const luma_width = self->width / self->luma_loss;
     int const chroma_width = self->width / self->chroma_loss;
@@ -297,7 +299,7 @@ static void *libsecam_revert_frame(libsecam_t *self)
     double const *prev_cr = self->chroma;
 
     for (int y = 0; y < self->height; y++) {
-        unsigned char *rgb = &self->buffer[y * self->width * 4];
+        unsigned char *rgb = &out[y * self->width * 4];
         double const *luma = &self->luma[y * luma_width];
         double const *chroma = &self->chroma[y * chroma_width];
         double const *prev_chroma;
@@ -351,8 +353,6 @@ static void *libsecam_revert_frame(libsecam_t *self)
 
         prev_luma = luma;
     }
-    
-    return self->buffer;
 }
 
 /**
@@ -457,7 +457,7 @@ libsecam_t *libsecam_init(int width, int height)
 
     self->width = width;
     self->height = height;
-    self->buffer = LIBSECAM_MALLOC(width * height * 4);
+    self->buffer = NULL; // Will be initialized later if used.
 
     self->luma = LIBSECAM_MALLOC(sizeof(double) * width * height / luma_loss);
     self->chroma = LIBSECAM_MALLOC(sizeof(double) * width * height / chroma_loss);
@@ -477,7 +477,7 @@ libsecam_t *libsecam_init(int width, int height)
     self->luma_loss = luma_loss;
     self->chroma_loss = chroma_loss;
 
-    if (!self->buffer || !self->luma || !self->chroma || !self->vert || !self->chroma_buffer) {
+    if (!self->luma || !self->chroma || !self->vert || !self->chroma_buffer) {
         libsecam_close(self);
         return NULL;
     }
@@ -500,7 +500,7 @@ libsecam_options_t *libsecam_options(libsecam_t *self)
     return &self->options;
 }
 
-unsigned char const *libsecam_filter(libsecam_t *self, unsigned char const *src)
+void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsigned char *dst)
 {
     libsecam_convert_frame(self, src);
 
@@ -566,7 +566,22 @@ unsigned char const *libsecam_filter(libsecam_t *self, unsigned char const *src)
         }
     }
 
-    return libsecam_revert_frame(self);
+    libsecam_revert_frame(self, dst);
+}
+
+unsigned char const *libsecam_filter(libsecam_t *self, unsigned char const *src)
+{
+    if (!self->buffer) {
+        self->buffer = LIBSECAM_MALLOC(self->width * self->height * 4);
+
+        if (!self->buffer) {
+            return NULL;
+        }
+    }
+
+    libsecam_filter_to_buffer(self, src, self->buffer);
+
+    return self->buffer;
 }
 
 //------------------------------------------------------------------------------
