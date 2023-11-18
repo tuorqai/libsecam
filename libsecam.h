@@ -25,6 +25,7 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      2.3     2023.11.18  Update 2, Revision 3 (less color loss on RGB-YUV)
 //      2.2     2023.11.18  Update 2, Revision 2 (added _filter_to_buffer())
 //      2.1     2023.11.18  Update 2, Revision 1
 //      2.0     2023.11.18  Update 2
@@ -212,23 +213,55 @@ static unsigned char libsecam_rgb_to_luma(unsigned char const *src)
 /**
  * Converts three-byte RGB array to Cb (chroma blue) value.
  */
-static unsigned char libsecam_rgb_to_cb(unsigned char const *src)
+static unsigned char libsecam_rgb_to_cb(unsigned char const *src, int loss)
 {
+    unsigned int r = src[0];
+    unsigned int g = src[1];
+    unsigned int b = src[2];
+
+    if (loss > 1) {
+        for (int i = 1; i < loss; i++) {
+            r += src[4 * i + 0];
+            g += src[4 * i + 1];
+            b += src[4 * i + 2];
+        }
+
+        r /= loss;
+        g /= loss;
+        b /= loss;
+    }
+
     return libsecam_clamp(0, 255, 128.0
-        - (37.9450 * src[0] / 256.0)
-        - (74.4940 * src[1] / 256.0)
-        + (112.439 * src[2] / 256.0));
+        - (37.9450 * r / 256.0)
+        - (74.4940 * g / 256.0)
+        + (112.439 * b / 256.0));
 }
 
 /**
  * Converts three-byte RGB array to Cr (chroma red) value.
  */
-static unsigned char libsecam_rgb_to_cr(unsigned char const *src)
+static unsigned char libsecam_rgb_to_cr(unsigned char const *src, int loss)
 {
+    unsigned int r = src[0];
+    unsigned int g = src[1];
+    unsigned int b = src[2];
+
+    if (loss > 1) {
+        for (int i = 1; i < loss; i++) {
+            r += src[4 * i + 0];
+            g += src[4 * i + 1];
+            b += src[4 * i + 2];
+        }
+
+        r /= loss;
+        g /= loss;
+        b /= loss;
+    }
+
     return libsecam_clamp(0, 255, 128.0
-        + (112.439 * src[0] / 256.0)
-        - (94.1540 * src[1] / 256.0)
-        - (18.2850 * src[2] / 256.0));
+        + (112.439 * r / 256.0)
+        - (94.1540 * g / 256.0)
+        - (18.2850 * b / 256.0));
 }
 
 /**
@@ -277,9 +310,9 @@ static void libsecam_convert_frame(libsecam_t *self, unsigned char const *src)
 
         for (int x_chroma = 0; x_chroma < chroma_width; x_chroma++) {
             if (y % 2 == 0) {
-                chroma[x_chroma] = libsecam_rgb_to_cb(&rgb[4 * self->chroma_loss * x_chroma]) / 255.0;
+                chroma[x_chroma] = libsecam_rgb_to_cb(&rgb[4 * self->chroma_loss * x_chroma], self->chroma_loss) / 255.0;
             } else {
-                chroma[x_chroma] = libsecam_rgb_to_cr(&rgb[4 * self->chroma_loss * x_chroma]) / 255.0;
+                chroma[x_chroma] = libsecam_rgb_to_cr(&rgb[4 * self->chroma_loss * x_chroma], self->chroma_loss) / 255.0;
             }
         }
     }
