@@ -129,10 +129,8 @@ static void terminate(void)
     SDL_DestroyWindow(window);
 }
 
-static void decrementOption(int quick)
+static void decrementOption(double mul)
 {
-    double mul = quick ? 10.0 : 1.0;
-
     switch (currentOption) {
     case OPTION_LUMA_NOISE_FACTOR:
         options->luma_noise_factor -= 0.01 * mul;
@@ -164,10 +162,8 @@ static void decrementOption(int quick)
     }
 }
 
-static void incrementOption(int quick)
+static void incrementOption(double mul)
 {
-    double mul = quick ? 10.0 : 1.0;
-
     switch (currentOption) {
     case OPTION_LUMA_NOISE_FACTOR:
         options->luma_noise_factor += 0.01 * mul;
@@ -258,12 +254,12 @@ static void keyInput(SDL_Scancode key, unsigned int mod)
         }
         break;
     case SDL_SCANCODE_LEFT:
-        decrementOption(mod & KMOD_SHIFT);
+        decrementOption((mod & KMOD_SHIFT) ? 10.0 : ((mod & KMOD_CTRL) ? 0.1 : 1.0));
         printOption();
         pingUpdate = 1;
         break;
     case SDL_SCANCODE_RIGHT:
-        incrementOption(mod & KMOD_SHIFT);
+        incrementOption((mod & KMOD_SHIFT) ? 10.0 : ((mod & KMOD_CTRL) ? 0.1 : 1.0));
         printOption();
         pingUpdate = 1;
         break;
