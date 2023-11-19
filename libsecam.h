@@ -25,6 +25,7 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      3.1     2023.11.20  New, more realistic chroma noise
 //      3.0     2023.11.20  Update 3:
 //                          * Add fires on luma edges
 //                          * Add fires on cyan background
@@ -430,19 +431,23 @@ static void libsecam_apply_shift(double *line, int width, int x0, int x1, int sh
 
 /**
  * Simulates "fire" effect.
+ * Also simulates chroma noise using the same method as fires.
  */
-static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, double *prev_chroma, int chroma_width, double factor)
+static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, double *prev_chroma, int chroma_width, double factor, double noise_factor)
 {
     double gain = 0;
     double fall = 0;
     double sign = 0;
     double const force = 0.25 + (libsecam_frand() * 0.5);
+
+    double noise_gain = 0;
+    double noise_fall = 0;
+    double noise_sign = 0;
+
     double const threshold = 0.48;
     int const ratio = luma_width / chroma_width;
 
     for (int i = 0; i < chroma_width; i++) {
-        bool start = false;
-
         double min = luma[i * ratio + 0];
         double max = luma[i * ratio + 0];
 
@@ -467,10 +472,13 @@ static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, do
             }
         }
 
+        double r = libsecam_frand() * 100.0;
+        bool start;
+
         if (luma_delta > threshold || chroma_delta > 0.5) {
-            start = libsecam_chance(0.0625 + factor * 8.0);
+            start = r < (0.0625 + factor * 8.0);
         } else {
-            start = libsecam_chance(factor);
+            start = r < factor;
         }
 
         if (start) {
@@ -492,6 +500,27 @@ static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, do
             }
 
             chroma[i] += gain * sign;
+        }
+
+        if (r < 18.0) {
+            // Start noise fire.
+            int const length = 4;
+            
+            noise_gain = noise_factor;
+            noise_fall = noise_factor / length;
+            noise_sign = ((int) floor(r) % 2) ? -1.0 : 1.0;
+
+            chroma[i] += noise_gain / 2.0 * noise_sign;
+        } else if (noise_gain > 0.0) {
+            // Continue drawing previously started noise.
+            noise_gain -= noise_fall;
+
+            if (noise_gain < 0.0) {
+                noise_gain = 0.0;
+                noise_fall = 0.0;
+            }
+
+            chroma[i] += noise_gain * noise_sign;
         }
     }
 }
@@ -584,10 +613,10 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         libsecam_apply_noise(luma, luma_width, self->options.luma_noise_factor);
 
         // Chroma noise+fire.
-        libsecam_apply_noise(chroma, chroma_width, self->options.chroma_noise_factor);
         libsecam_apply_fire(luma, luma_width,
             chroma, (y % 2) == 1 ? prev_chroma : NULL, chroma_width,
-            self->options.chroma_fire_factor);
+            self->options.chroma_fire_factor,
+            self->options.chroma_noise_factor);
 
         prev_chroma = chroma;
     }
