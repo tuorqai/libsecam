@@ -25,6 +25,8 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      2.5     2023.11.19  Remove obsolete code, replace unnecessary bilerp()
+//                          by lerp(), better comments.
 //      2.4     2023.11.19  Const chroma_loss, randomized chroma shift,
 //                          no negative chroma fire sign
 //      2.3     2023.11.18  Update 2, Revision 3 (less color loss on RGB-YUV)
@@ -181,16 +183,7 @@ static inline int libsecam_clamp(int a, int b, int x)
  */
 static inline double libsecam_lerp(double a, double b, float x)
 {
-#if 0
-    // This is probably my weirdest take, but
-    // adding some randomization here makes picture
-    // less "digital".
-    double const rx = x * libsecam_frand();
-#endif
-
-    double const rx = x;
-
-    return a + (b - a) * rx;
+    return a + (b - a) * x;
 }
 
 /**
@@ -352,10 +345,9 @@ static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
             int x1_luma = libsecam_clamp(0, luma_width - 1, x0_luma + 1);
             double x_luma = (1.0 / self->luma_loss) + (x % self->luma_loss) / (double) self->luma_loss;
 
-            double luma_value = 255.0 * libsecam_bilerp(
-                prev_luma[x0_luma], prev_luma[x1_luma],
+            double luma_value = 255.0 * libsecam_lerp(
                 luma[x0_luma], luma[x1_luma],
-                x_luma, 0.5
+                x_luma
             );
 
             unsigned char yuv_y = libsecam_clamp(0, 255, luma_value);
@@ -403,13 +395,6 @@ static void libsecam_apply_echo(double *line, int width, int offset)
 
     for (int x = 0; x < width; x++) {
         line[x] -= line[x >= offset ? x - offset : 0] * 0.5;
-
-#if 0
-        // Slower but prettier method
-        for (int c = 0; c < offset; c++) {
-            line[x] -= line[(x - c) < 0 ? 0 : x - c] * (0.33 / offset);
-        }
-#endif
     }
 }
 
@@ -556,7 +541,7 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         double *luma = &self->luma[y * luma_width];
         double *chroma = &self->chroma[y * chroma_width];
 
-        // [Update #2] This is used instead of "luma shift chance".
+        // Horizontal shake.
         if (self->options.horizontal_instability > 0) {
             double const d = v * (double) self->options.horizontal_instability;
             libsecam_apply_shift(luma, luma_width, 0, luma_width, (d / self->luma_loss), 0.0);
@@ -566,30 +551,17 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         if (libsecam_chance(self->options.luma_loss_chance)) {
             libsecam_apply_noise(luma, luma_width, 0.5);
         } else {
-            // [Update #2] "Luma shift chance" is no more.
-#if 0
-            if (libsecam_frand() < self->luma_shift_chance) {
-                int range = libsecam_irand(1, 3);
-                libsecam_apply_shift(luma, luma_width, range, 0.0);
-            }
-#endif
-
+            // Luminance echo+noise+fire.
             libsecam_apply_echo(luma, luma_width, self->options.echo_offset);
             libsecam_apply_noise(luma, luma_width, self->options.luma_noise_factor * v);
             libsecam_apply_fire(luma, luma_width, self->options.luma_fire_factor * v,
                 32 / self->luma_loss, 64 / self->luma_loss);
         }
 
-        // [Update #2] I'm not sure if this is needed now.
-#if 0
-        for (int x = 0; x < luma_width; x++) {
-            luma[x] = 0.0625 + (luma[x] * 0.9);
-        }
-#endif
-
         if (libsecam_chance(self->options.chroma_loss_chance)) {
             libsecam_apply_noise(chroma, chroma_width, 0.5);
         } else {
+            // Chroma shift.
             if (libsecam_chance(self->options.chroma_shift_chance)) {
                 int x0 = v0 * chroma_width;
                 int x1 = x0 + v1 * chroma_width;
@@ -602,6 +574,7 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
                 libsecam_apply_shift(chroma, chroma_width, x0, x1, shift, 0.5);
             }
 
+            // Chroma noise+fire.
             libsecam_apply_noise(chroma, chroma_width, self->options.chroma_noise_factor * v);
             libsecam_apply_fire(chroma, chroma_width, self->options.chroma_fire_factor * v,
                 64 / self->chroma_loss, 120 / self->chroma_loss);
