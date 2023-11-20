@@ -24,12 +24,8 @@
 enum option
 {
     OPTION_LUMA_NOISE_FACTOR,
-    OPTION_LUMA_FIRE_FACTOR,
-    OPTION_LUMA_LOSS_CHANCE,
-    OPTION_CHROMA_SHIFT_CHANCE,
     OPTION_CHROMA_NOISE_FACTOR,
     OPTION_CHROMA_FIRE_FACTOR,
-    OPTION_CHROMA_LOSS_CHANCE,
     OPTION_ECHO_OFFSET,
     OPTION_HORIZONTAL_INSTABILITY,
     TOTAL_OPTIONS,
@@ -37,12 +33,8 @@ enum option
 
 static char const *optionNames[TOTAL_OPTIONS] = {
     "LUMA_NOISE_FACTOR",
-    "LUMA_FIRE_FACTOR",
-    "LUMA_LOSS_CHANCE",
-    "CHROMA_SHIFT_CHANCE",
     "CHROMA_NOISE_FACTOR",
     "CHROMA_FIRE_FACTOR",
-    "CHROMA_LOSS_CHANCE",
     "ECHO_OFFSET",
     "HORIZONTAL_INSTABILITY",
 };
@@ -135,23 +127,11 @@ static void decrementOption(double mul)
     case OPTION_LUMA_NOISE_FACTOR:
         options->luma_noise_factor -= 0.01 * mul;
         break;
-    case OPTION_LUMA_FIRE_FACTOR:
-        options->luma_fire_factor -= 0.01 * mul;
-        break;
-    case OPTION_LUMA_LOSS_CHANCE:
-        options->luma_loss_chance -= 0.01 * mul;
-        break;
-    case OPTION_CHROMA_SHIFT_CHANCE:
-        options->chroma_shift_chance -= 0.01 * mul;
-        break;
     case OPTION_CHROMA_NOISE_FACTOR:
         options->chroma_noise_factor -= 0.01 * mul;
         break;
     case OPTION_CHROMA_FIRE_FACTOR:
         options->chroma_fire_factor -= 0.01 * mul;
-        break;
-    case OPTION_CHROMA_LOSS_CHANCE:
-        options->chroma_loss_chance -= 0.01 * mul;
         break;
     case OPTION_ECHO_OFFSET:
         options->echo_offset -= 1;
@@ -168,23 +148,11 @@ static void incrementOption(double mul)
     case OPTION_LUMA_NOISE_FACTOR:
         options->luma_noise_factor += 0.01 * mul;
         break;
-    case OPTION_LUMA_FIRE_FACTOR:
-        options->luma_fire_factor += 0.01 * mul;
-        break;
-    case OPTION_LUMA_LOSS_CHANCE:
-        options->luma_loss_chance += 0.01 * mul;
-        break;
-    case OPTION_CHROMA_SHIFT_CHANCE:
-        options->chroma_shift_chance += 0.01 * mul;
-        break;
     case OPTION_CHROMA_NOISE_FACTOR:
         options->chroma_noise_factor += 0.01 * mul;
         break;
     case OPTION_CHROMA_FIRE_FACTOR:
         options->chroma_fire_factor += 0.01 * mul;
-        break;
-    case OPTION_CHROMA_LOSS_CHANCE:
-        options->chroma_loss_chance += 0.01 * mul;
         break;
     case OPTION_ECHO_OFFSET:
         options->echo_offset += 1;
@@ -203,23 +171,11 @@ static void printOption(void)
     case OPTION_LUMA_NOISE_FACTOR:
         sprintf(buffer, "%.3f", options->luma_noise_factor);
         break;
-    case OPTION_LUMA_FIRE_FACTOR:
-        sprintf(buffer, "%.3f", options->luma_fire_factor);
-        break;
-    case OPTION_LUMA_LOSS_CHANCE:
-        sprintf(buffer, "%.3f", options->luma_loss_chance);
-        break;
-    case OPTION_CHROMA_SHIFT_CHANCE:
-        sprintf(buffer, "%.3f", options->chroma_shift_chance);
-        break;
     case OPTION_CHROMA_NOISE_FACTOR:
         sprintf(buffer, "%.3f", options->chroma_noise_factor);
         break;
     case OPTION_CHROMA_FIRE_FACTOR:
         sprintf(buffer, "%.3f", options->chroma_fire_factor);
-        break;
-    case OPTION_CHROMA_LOSS_CHANCE:
-        sprintf(buffer, "%.3f", options->chroma_loss_chance);
         break;
     case OPTION_ECHO_OFFSET:
         sprintf(buffer, "%d", options->echo_offset);
@@ -265,23 +221,15 @@ static void keyInput(SDL_Scancode key, unsigned int mod)
         break;
     case SDL_SCANCODE_BACKSPACE:
         options->luma_noise_factor = LIBSECAM_DEFAULT_LUMA_NOISE_FACTOR;
-        options->luma_fire_factor = LIBSECAM_DEFAULT_LUMA_FIRE_FACTOR;
-        options->luma_loss_chance = LIBSECAM_DEFAULT_LUMA_LOSS_CHANCE;
-        options->chroma_shift_chance = LIBSECAM_DEFAULT_CHROMA_SHIFT_CHANCE;
         options->chroma_noise_factor = LIBSECAM_DEFAULT_CHROMA_NOISE_FACTOR;
         options->chroma_fire_factor = LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR;
-        options->chroma_loss_chance = LIBSECAM_DEFAULT_CHROMA_LOSS_CHANCE;
         options->echo_offset = LIBSECAM_DEFAULT_ECHO_OFFSET;
         options->horizontal_instability = LIBSECAM_DEFAULT_HORIZONTAL_INSTABILITY;
         break;
     case SDL_SCANCODE_0:
         options->luma_noise_factor = 0.0;
-        options->luma_fire_factor = 0.0;
-        options->luma_loss_chance = 0.0;
-        options->chroma_shift_chance = 0.0;
         options->chroma_noise_factor = 0.0;
         options->chroma_fire_factor = 0.0;
-        options->chroma_loss_chance = 0.0;
         options->echo_offset = 0;
         options->horizontal_instability = 0;
         break;
