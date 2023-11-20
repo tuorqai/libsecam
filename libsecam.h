@@ -25,6 +25,9 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      3.2     2023.11.20  New fixes:
+//                          * Fires on cyan and yellow backgrounds
+//                          * Static shift: bright parts of image get shifted
 //      3.1     2023.11.20  New, more realistic chroma noise
 //      3.0     2023.11.20  Update 3:
 //                          * Add fires on luma edges
@@ -140,6 +143,7 @@ struct libsecam_s
 
     double *luma;
     double *chroma;
+    double *stable_shift_buffer;
     double *vert;
     unsigned char *chroma_buffer;
 
@@ -195,6 +199,24 @@ static inline double libsecam_lerp(double a, double b, float x)
 static inline double libsecam_bilerp(double a, double b, double c, double d, float x, float y)
 {
     return libsecam_lerp(libsecam_lerp(a, b, x), libsecam_lerp(c, d, x), y);
+}
+
+/**
+ * Interpolate line.
+ */
+static void libsecam_lerp_line(double *line, int length, int step)
+{
+    for (int i = 0; i < length; i++) {
+        if ((i % step) == 0) {
+            continue;
+        }
+
+        double const a = line[((i / step) * step) % length];
+        double const b = line[((i / step) * step + step) % length];
+        double const x = (i % step) / (double) step;
+
+        line[i] = libsecam_lerp(a, b, x);
+    }
 }
 
 /**
@@ -462,26 +484,19 @@ static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, do
         }
 
         double luma_delta = max - min;
-        double chroma_delta = 0.0;
+        double actual_factor = factor;
 
-        // Ugly hack to create fires on cyan background.
-        // FIXME: find a better solution.
-        if (prev_chroma) {
-            if (prev_chroma[i] > 0.65 && chroma[i] < 0.35) {
-                chroma_delta = 1.0;
-            }
+        if (prev_chroma[i] > 0.6 && chroma[i] < 0.4) {
+            actual_factor = (factor < 0.125) ? 0.125 : factor * 64.0;
+        }
+
+        if (luma_delta > threshold) {
+            actual_factor = 0.0625 + actual_factor * 8.0;
         }
 
         double r = libsecam_frand() * 100.0;
-        bool start;
 
-        if (luma_delta > threshold || chroma_delta > 0.5) {
-            start = r < (0.0625 + factor * 8.0);
-        } else {
-            start = r < factor;
-        }
-
-        if (start) {
+        if (r < actual_factor) {
             // Start new fire.
             int const length = (int) floor(force * 32.0);
 
@@ -544,6 +559,7 @@ libsecam_t *libsecam_init(int width, int height)
 
     self->luma = LIBSECAM_MALLOC(sizeof(double) * width * height / luma_loss);
     self->chroma = LIBSECAM_MALLOC(sizeof(double) * width * height / chroma_loss);
+    self->stable_shift_buffer = LIBSECAM_MALLOC(sizeof(*self->stable_shift_buffer) * height);
     self->vert = LIBSECAM_MALLOC(sizeof(double) * height);
     self->chroma_buffer = LIBSECAM_MALLOC(width);
 
@@ -556,7 +572,7 @@ libsecam_t *libsecam_init(int width, int height)
     self->luma_loss = luma_loss;
     self->chroma_loss = chroma_loss;
 
-    if (!self->luma || !self->chroma || !self->vert || !self->chroma_buffer) {
+    if (!self->luma || !self->chroma || !self->stable_shift_buffer || !self->vert || !self->chroma_buffer) {
         libsecam_close(self);
         return NULL;
     }
@@ -567,6 +583,7 @@ libsecam_t *libsecam_init(int width, int height)
 void libsecam_close(libsecam_t *self)
 {
     LIBSECAM_FREE(self->chroma_buffer);
+    LIBSECAM_FREE(self->stable_shift_buffer);
     LIBSECAM_FREE(self->vert);
     LIBSECAM_FREE(self->chroma);
     LIBSECAM_FREE(self->luma);
@@ -583,11 +600,39 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
 {
     libsecam_convert_frame(self, src);
 
-    for (int i = 0; i < self->height / 8; i++) {
-        self->vert[i] = libsecam_frand();
+    if (self->options.horizontal_instability > 0) {
+        for (int i = 0; i < self->height; i += 8) {
+            self->vert[i] = libsecam_frand();
+        }
+
+        libsecam_lerp_line(self->vert, self->height, 8);
     }
 
     int const luma_width = self->width / self->luma_loss;
+
+    if (self->options.echo_offset) {
+        for (int y = 0; y < self->height; y += 8) {
+            double *luma = &self->luma[y * luma_width];
+            double chunk_brightness = 0.0;
+
+            for (int y1 = y; y1 < (y + 8); y1++) {
+                double line_brightness = 0.0;
+
+                for (int x = 0; x < luma_width; x++) {
+                    line_brightness += luma[x];
+                }
+
+                line_brightness /= (double) luma_width;
+                chunk_brightness += line_brightness;
+            }
+
+            chunk_brightness /= 8.0;
+            self->stable_shift_buffer[y] = chunk_brightness;
+        }
+
+        libsecam_lerp_line(self->stable_shift_buffer, self->height, 8);
+    }
+
     int const chroma_width = self->width / self->chroma_loss;
     double *prev_chroma = self->chroma;
 
@@ -597,15 +642,18 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         double *luma = &self->luma[y * luma_width];
         double *chroma = &self->chroma[y * chroma_width];
 
-        // Horizontal shake.
-        if (self->options.horizontal_instability > 0) {
-            double const v0 = self->vert[(y / 8) % (self->height / 8)];
-            double const v1 = self->vert[((y / 8) + 1) % (self->height / 8)];
-            double const v = libsecam_lerp(v0, v1, (y % 8) / 8.0);
-            double const d = v * (double) self->options.horizontal_instability;
+        // Stable shift.
+        if (self->options.echo_offset) {
+            int const shift = self->stable_shift_buffer[y] * self->options.echo_offset * 4;
+            libsecam_apply_shift(luma, luma_width, 0, luma_width, shift / self->luma_loss, 0.0);
+            libsecam_apply_shift(chroma, chroma_width, 0, chroma_width, shift / self->chroma_loss, 0.5);
+        }
 
-            libsecam_apply_shift(luma, luma_width, 0, luma_width, (d / self->luma_loss), 0.0);
-            libsecam_apply_shift(chroma, chroma_width, 0, chroma_width, (d / self->chroma_loss), 0.5);
+        // Unstable shift.
+        if (self->options.horizontal_instability > 0) {
+            int const shift = self->vert[y] * self->options.horizontal_instability;
+            libsecam_apply_shift(luma, luma_width, 0, luma_width, (shift / self->luma_loss), 0.0);
+            libsecam_apply_shift(chroma, chroma_width, 0, chroma_width, (shift / self->chroma_loss), 0.5);
         }
 
         // Luminance echo+noise.
@@ -614,7 +662,7 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
 
         // Chroma noise+fire.
         libsecam_apply_fire(luma, luma_width,
-            chroma, (y % 2) == 1 ? prev_chroma : NULL, chroma_width,
+            chroma, prev_chroma, chroma_width,
             self->options.chroma_fire_factor,
             self->options.chroma_noise_factor);
 
