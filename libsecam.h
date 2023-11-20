@@ -25,6 +25,7 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      3.3     2023.11.20  apply_fire() updated
 //      3.2     2023.11.20  New fixes:
 //                          * Fires on cyan and yellow backgrounds
 //                          * Static shift: bright parts of image get shifted
@@ -60,7 +61,7 @@
 #define LIBSECAM_DEFAULT_LUMA_LOSS_CHANCE           0.02    /* unused */
 #define LIBSECAM_DEFAULT_CHROMA_SHIFT_CHANCE        9.0     /* unused */
 #define LIBSECAM_DEFAULT_CHROMA_NOISE_FACTOR        0.25
-#define LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR         0.1
+#define LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR         4.0
 #define LIBSECAM_DEFAULT_CHROMA_LOSS_CHANCE         0.03    /* unused */
 #define LIBSECAM_DEFAULT_ECHO_OFFSET                4
 #define LIBSECAM_DEFAULT_HORIZONTAL_INSTABILITY     0
@@ -484,15 +485,16 @@ static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, do
         }
 
         double luma_delta = max - min;
-        double actual_factor = factor;
+        double chroma_delta = fabs(prev_chroma[i] - chroma[i]);
 
-        if (prev_chroma[i] > 0.6 && chroma[i] < 0.4) {
-            actual_factor = (factor < 0.125) ? 0.125 : factor * 64.0;
-        }
+        double const random_factor = 0.0;
+        double const luma_factor = 0.5;
+        double const chroma_factor = 0.5;
 
-        if (luma_delta > threshold) {
-            actual_factor = 0.0625 + actual_factor * 8.0;
-        }
+        double actual_factor = factor * (
+            + random_factor
+            + luma_delta * luma_factor
+            + chroma_delta * chroma_factor);
 
         double r = libsecam_frand() * 100.0;
 
@@ -660,13 +662,19 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         libsecam_apply_echo(luma, luma_width, self->options.echo_offset);
         libsecam_apply_noise(luma, luma_width, self->options.luma_noise_factor);
 
+        // [Hack] Despite having name "prev_chroma", this pointer
+        // points to the next chroma line. Why? Because previous line
+        // was already altered with fire effect and the next line
+        // is still clean. _apply_fire() function needs two clean lines
+        // to work correctly, otherwise the image will become too pink
+        // (resonance-like effect?).
+        prev_chroma = (y == self->height - 1) ? chroma : chroma + chroma_width;
+
         // Chroma noise+fire.
         libsecam_apply_fire(luma, luma_width,
             chroma, prev_chroma, chroma_width,
             self->options.chroma_fire_factor,
             self->options.chroma_noise_factor);
-
-        prev_chroma = chroma;
     }
 
     libsecam_revert_frame(self, dst);
