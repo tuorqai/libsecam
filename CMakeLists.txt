@@ -4,6 +4,7 @@ project(libsecam)
 
 add_library(libsecam INTERFACE)
 target_include_directories(libsecam INTERFACE ${CMAKE_SOURCE_DIR})
+install(FILES libsecam.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 find_library(LIBM m)
 
