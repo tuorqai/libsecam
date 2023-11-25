@@ -7,48 +7,50 @@ on:
     branches: [ "master" ]
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-
-    strategy:
-      fail-fast: false
-
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        build_type: [Release]
-        compiler: [gcc, clang, cl]
-        exclude:
-          - os: windows-latest
-            compiler: gcc
-          - os: windows-latest
-            compiler: clang
-          - os: ubuntu-latest
-            compiler: cl
-
+  linux:
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-
-    - name: Set reusable strings
-      id: strings
-      shell: bash
-      run: |
-        echo "build-output-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
-        echo "install-output-dir=${{ github.workspace }}/install" >> "$GITHUB_OUTPUT"
-
-    - name: Configure CMake
-      run: >
-        cmake -B ${{ steps.strings.outputs.build-output-dir }}
-        -DCMAKE_C_COMPILER=${{ matrix.compiler }}
-        -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        -S ${{ github.workspace }}
-
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get -y install libsdl2-dev
+    - name: Configure
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
     - name: Build
-      run: cmake --build ${{ steps.strings.outputs.build-output-dir }} --config ${{ matrix.build_type }}
-
+      run: cmake --build build
     - name: Install
-      run: cmake --install ${{ steps.strings.outputs.build-output-dir }} --prefix ${{ steps.strings.outputs.install-output-dir }}
-
+      run: cmake --install build --prefix install
     - uses: actions/upload-artifact@v3
       with:
-        name: libsecam-${{ matrix.os }}-${{ matrix.compiler }}-${{ github.sha }}
-        path: ${{ steps.strings.outputs.install-output-dir }}
+        name: libsecam-linux-${{ github.sha }}
+        path: install
+
+  win32:
+    runs-on: windows-latest
+    env:
+      SDL_VERSION: 2.28.5
+    steps:
+    - uses: actions/checkout@v3
+    - name: Cache SDL
+      uses: actions/cache@v2
+      env:
+        cache-name: cache-sdl
+      with:
+        path: C:\SDL
+        key: win32-build-${{ env.cache-name }}
+    - name: Download SDL
+      run: |
+        if (-Not (Test-Path C:\SDL))
+        {
+            Invoke-WebRequest "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL_VERSION/SDL2-devel-$env:SDL_VERSION-VC.zip" -o C:\SDL.zip
+            Expand-Archive C:\SDL.zip -DestinationPath C:\
+        }
+    - name: Configure
+      run: cmake -A Win32 -B build -DCMAKE_MODULE_PATH="C:\SDL2-$env:SDL_VERSION\cmake"
+    - name: Build
+      run: cmake --build build --config Release
+    - name: Install
+      run: cmake --install build --prefix install
+    - uses: actions/upload-artifact@v3
+      with:
+        name: libsecam-win32-${{ github.sha }}
+        path: install
