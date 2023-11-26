@@ -9,27 +9,28 @@ on:
 jobs:
   linux:
     runs-on: ubuntu-latest
+    
     steps:
     - uses: actions/checkout@v3
+    
     - name: Install dependencies
       run: sudo apt-get update && sudo apt-get -y install libsdl2-dev
+    
     - name: Configure
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+    
     - name: Build
       run: cmake --build build
-    - name: Install
-      run: cmake --install build --prefix install
-    - uses: actions/upload-artifact@v3
-      with:
-        name: libsecam-linux-${{ github.sha }}
-        path: install
 
   win32:
     runs-on: windows-latest
+    
     env:
       SDL_VERSION: 2.28.5
+    
     steps:
     - uses: actions/checkout@v3
+
     - name: Cache SDL
       uses: actions/cache@v2
       env:
@@ -37,6 +38,7 @@ jobs:
       with:
         path: C:\SDL
         key: win32-build-${{ env.cache-name }}
+
     - name: Download SDL
       run: |
         if (-Not (Test-Path C:\SDL))
@@ -44,12 +46,16 @@ jobs:
             Invoke-WebRequest "https://github.com/libsdl-org/SDL/releases/download/release-$env:SDL_VERSION/SDL2-devel-$env:SDL_VERSION-VC.zip" -o C:\SDL.zip
             Expand-Archive C:\SDL.zip -DestinationPath C:\
         }
+
     - name: Configure
       run: cmake -A Win32 -B build -DCMAKE_PREFIX_PATH="C:/SDL2-$env:SDL_VERSION/cmake"
+  
     - name: Build
       run: cmake --build build --config Release
+
     - name: Install
       run: cmake --install build --prefix install
+
     - uses: actions/upload-artifact@v3
       with:
         name: libsecam-win32-${{ github.sha }}
