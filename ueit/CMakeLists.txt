@@ -2,7 +2,7 @@
 find_package(SDL2 CONFIG REQUIRED)
 
 add_executable(ueit ueit.c)
-target_link_libraries(ueit PRIVATE SDL2::SDL2 libsecam)
+target_link_libraries(ueit PRIVATE SDL2::SDL2 SDL2::SDL2main libsecam)
 
 install(TARGETS ueit RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
