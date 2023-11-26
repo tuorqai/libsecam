@@ -45,7 +45,7 @@ jobs:
             Expand-Archive C:\SDL.zip -DestinationPath C:\
         }
     - name: Configure
-      run: cmake -A Win32 -B build -DCMAKE_MODULE_PATH="C:\SDL2-$env:SDL_VERSION\cmake"
+      run: cmake -A Win32 -B build -DCMAKE_MODULE_PATH="C:/SDL2-$env:SDL_VERSION/cmake"
     - name: Build
       run: cmake --build build --config Release
     - name: Install
