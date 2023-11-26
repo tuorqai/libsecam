@@ -14,6 +14,7 @@
 // Escape: exit
 //------------------------------------------------------------------------------
 
+#include <stdio.h>
 #include <SDL.h>
 
 #define LIBSECAM_IMPLEMENTATION
@@ -98,7 +99,7 @@ static int initialize(char const *path)
     SDL_RenderSetVSync(renderer, 1);
     SDL_RenderSetLogicalSize(renderer, 720, 576);
 
-    if ((ueitSurface = loadBMP(path ?: "ueit.bmp")) == NULL) {
+    if ((ueitSurface = loadBMP(path ? path : "ueit.bmp")) == NULL) {
         return 1;
     }
 
