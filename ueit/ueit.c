@@ -14,7 +14,7 @@
 // Escape: exit
 //------------------------------------------------------------------------------
 
-#include <SDL2/SDL.h>
+#include <SDL.h>
 
 #define LIBSECAM_IMPLEMENTATION
 #include "../libsecam.h"
