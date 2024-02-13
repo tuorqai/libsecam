@@ -30,6 +30,7 @@ static void update_libsecam_options(libsecam_t *libsecam, double intensity)
         options->chroma_noise_factor = 0.125;
         options->chroma_fire_factor = 1.0 * x; /* 0.0 to 1.0 */
         options->echo_offset = 2;
+        options->stable_shift = 0;
         options->horizontal_instability = (x < 0.25) ? 0 : 2; /* 0 or 2 */
     } else {
         double const x = (intensity - 0.25) / 0.75;
@@ -39,6 +40,7 @@ static void update_libsecam_options(libsecam_t *libsecam, double intensity)
         options->chroma_noise_factor = 0.125;
         options->chroma_fire_factor = 1.0 + (19.0 * x); /* 1.0 to 20.0 */
         options->echo_offset = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
+        options->stable_shift = options->echo_offset / 2;
         options->horizontal_instability = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
     }
 }

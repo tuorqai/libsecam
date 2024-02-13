@@ -25,6 +25,7 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      3.4     2024.02.13  Separate stable shift option
 //      3.3     2023.11.20  apply_fire() updated
 //      3.2     2023.11.20  New fixes:
 //                          * Fires on cyan and yellow backgrounds
@@ -64,6 +65,7 @@
 #define LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR         4.0
 #define LIBSECAM_DEFAULT_CHROMA_LOSS_CHANCE         0.03    /* unused */
 #define LIBSECAM_DEFAULT_ECHO_OFFSET                4
+#define LIBSECAM_DEFAULT_STABLE_SHIFT               2
 #define LIBSECAM_DEFAULT_HORIZONTAL_INSTABILITY     0
 
 //------------------------------------------------------------------------------
@@ -86,6 +88,7 @@ typedef struct libsecam_options
     double chroma_fire_factor;      /* range: 0.0 to 100.0 */
     double chroma_loss_chance;      /* unused */
     int echo_offset;                /* range: 0 to whatever */
+    int stable_shift;               /* range: 0 to whatever */
     int horizontal_instability;     /* range: 0 to whatever */
 } libsecam_options_t;
 
@@ -569,6 +572,7 @@ libsecam_t *libsecam_init(int width, int height)
     self->options.chroma_noise_factor = LIBSECAM_DEFAULT_CHROMA_NOISE_FACTOR;
     self->options.chroma_fire_factor = LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR;
     self->options.echo_offset = LIBSECAM_DEFAULT_ECHO_OFFSET;
+    self->options.stable_shift = LIBSECAM_DEFAULT_STABLE_SHIFT;
     self->options.horizontal_instability = LIBSECAM_DEFAULT_HORIZONTAL_INSTABILITY;
 
     self->luma_loss = luma_loss;
@@ -645,8 +649,8 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         double *chroma = &self->chroma[y * chroma_width];
 
         // Stable shift.
-        if (self->options.echo_offset) {
-            int const shift = self->stable_shift_buffer[y] * self->options.echo_offset * 4;
+        if (self->options.stable_shift > 0) {
+            int const shift = self->stable_shift_buffer[y] * self->options.stable_shift * 4;
             libsecam_apply_shift(luma, luma_width, 0, luma_width, shift / self->luma_loss, 0.0);
             libsecam_apply_shift(chroma, chroma_width, 0, chroma_width, shift / self->chroma_loss, 0.5);
         }
