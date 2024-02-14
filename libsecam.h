@@ -25,6 +25,7 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      3.5a    2024.02.14  Minor updates
 //      3.5     2024.02.14  Update echo effect (no more dark image)
 //      3.4     2024.02.13  Separate stable shift option
 //      3.3     2023.11.20  apply_fire() updated
@@ -352,7 +353,6 @@ static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
     int const luma_width = self->width / self->luma_loss;
     int const chroma_width = self->width / self->chroma_loss;
 
-    double const *prev_luma = self->luma;
     double const *prev_cb = self->chroma;
     double const *prev_cr = self->chroma;
 
@@ -360,13 +360,10 @@ static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
         unsigned char *rgb = &out[y * self->width * 4];
         double const *luma = &self->luma[y * luma_width];
         double const *chroma = &self->chroma[y * chroma_width];
-        double const *prev_chroma;
 
         if (y % 2 == 0) {
-            prev_chroma = prev_cb;
             prev_cb = chroma;
         } else {
-            prev_chroma = prev_cr;
             prev_cr = chroma;
         }
 
@@ -385,12 +382,10 @@ static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
             int x0_chroma = libsecam_clamp(0, chroma_width - 1, x / self->chroma_loss);
             int x1_chroma = libsecam_clamp(0, chroma_width - 1, x0_chroma + 1);
             double x_chroma = (1.0 / self->chroma_loss) + (x % self->chroma_loss) / (double) self->chroma_loss;
-            double y_chroma = 0.5 + ((y % 2) / 2.0);
 
-            double chroma_value = 255.0 * libsecam_bilerp(
-                prev_chroma[x0_chroma], prev_chroma[x1_chroma],
+            double chroma_value = 255.0 * libsecam_lerp(
                 chroma[x0_chroma], chroma[x1_chroma],
-                x_chroma, y_chroma
+                x_chroma
             );
 
             unsigned char yuv_cb, yuv_cr;
@@ -407,8 +402,6 @@ static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
 
             libsecam_ycbcr_to_rgb(&rgb[4 * x], yuv_y, yuv_cb, yuv_cr);
         }
-
-        prev_luma = luma;
     }
 }
 
@@ -511,9 +504,13 @@ static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, do
         double luma_delta = max - min;
         double chroma_delta = fabs(prev_chroma[i] - chroma[i]);
 
-        double const random_factor = 0.0;
-        double const luma_factor = 0.5;
-        double const chroma_factor = 0.5;
+        if (chroma_delta < 0.4) {
+            chroma_delta = 0.0;
+        }
+
+        double const random_factor = 0.01;
+        double const luma_factor = 0.07;
+        double const chroma_factor = 0.92;
 
         double actual_factor = factor * (
             + random_factor
