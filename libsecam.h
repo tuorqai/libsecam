@@ -25,6 +25,7 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      3.5     2024.02.14  Update echo effect (no more dark image)
 //      3.4     2024.02.13  Separate stable shift option
 //      3.3     2023.11.20  apply_fire() updated
 //      3.2     2023.11.20  New fixes:
@@ -413,17 +414,25 @@ static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
 
 /**
  * Applies echo (ghosting) effect on a scanline.
- * [Update #2] No more buffer.
- * FIXME: Makes the picture oversaturated.
  */
-static void libsecam_apply_echo(double *line, int width, int offset)
+static void libsecam_apply_echo(double *line, int width, int shift, int echo)
 {
-    if (offset == 0) {
+    if (echo == 0) {
         return;
     }
 
-    for (int x = 0; x < width; x++) {
-        line[x] -= line[x >= offset ? x - offset : 0] * 0.5;
+    int x0 = (shift < 0) ? 0 : shift;
+    int x1 = x0 + echo;
+    int x2 = x0 + (echo * 2);
+
+    for (int x = x0; x < width; x++) {
+        if (x < x1) {
+            line[x] = ((x - x0) / (double) echo) * line[x1];
+        } else if (x >= x2) {
+            double u = line[x - echo];
+            double v = line[x];
+            line[x] = line[x] - u * 0.5 + v * 0.5;
+        }
     }
 }
 
@@ -440,17 +449,29 @@ static void libsecam_apply_noise(double *line, int width, double amplitude)
 /**
  * Shifts scanline.
  */
-static void libsecam_apply_shift(double *line, int width, int x0, int x1, int shift, double fill)
+static void libsecam_apply_shift(double *line, int width, int shift, double fill)
 {
-    if (x0 == x1 || shift == 0) {
+    if (shift == 0) {
         return;
     }
 
-    for (int x = (x1 - 1); x >= x0; x--) {
-        if ((x - shift) >= 0) {
-            line[x] = line[x - shift];
-        } else {
-            line[x] = fill;
+    if (shift > 0) {
+        for (int x = width - 1; x >= 0; x--) {
+            if (x < shift) {
+                line[x] = fill;
+            } else {
+                line[x] = line[x - shift];
+            }
+        }
+    } else if (shift < 0) {
+        int margin = width + shift;
+
+        for (int x = 0; x < width; x++) {
+            if (x < margin) {
+                line[x] = line[x - shift];
+            } else {
+                line[x] = fill;
+            }
         }
     }
 }
@@ -616,7 +637,7 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
 
     int const luma_width = self->width / self->luma_loss;
 
-    if (self->options.echo_offset) {
+    if (self->options.stable_shift) {
         for (int y = 0; y < self->height; y += 8) {
             double *luma = &self->luma[y * luma_width];
             double chunk_brightness = 0.0;
@@ -648,22 +669,25 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         double *luma = &self->luma[y * luma_width];
         double *chroma = &self->chroma[y * chroma_width];
 
+        int shift = 0;
+
         // Stable shift.
         if (self->options.stable_shift > 0) {
-            int const shift = self->stable_shift_buffer[y] * self->options.stable_shift * 4;
-            libsecam_apply_shift(luma, luma_width, 0, luma_width, shift / self->luma_loss, 0.0);
-            libsecam_apply_shift(chroma, chroma_width, 0, chroma_width, shift / self->chroma_loss, 0.5);
+            shift += self->stable_shift_buffer[y] * self->options.stable_shift * 4;
         }
 
         // Unstable shift.
         if (self->options.horizontal_instability > 0) {
-            int const shift = self->vert[y] * self->options.horizontal_instability;
-            libsecam_apply_shift(luma, luma_width, 0, luma_width, (shift / self->luma_loss), 0.0);
-            libsecam_apply_shift(chroma, chroma_width, 0, chroma_width, (shift / self->chroma_loss), 0.5);
+            shift += self->vert[y] * self->options.horizontal_instability;
+        }
+
+        if (shift > 0) {
+            libsecam_apply_shift(luma, luma_width, shift / self->luma_loss, 0.0);
+            libsecam_apply_shift(chroma, chroma_width, shift / self->chroma_loss, 0.5);
         }
 
         // Luminance echo+noise.
-        libsecam_apply_echo(luma, luma_width, self->options.echo_offset);
+        libsecam_apply_echo(luma, luma_width, shift / self->luma_loss, self->options.echo_offset);
         libsecam_apply_noise(luma, luma_width, self->options.luma_noise_factor);
 
         // [Hack] Despite having name "prev_chroma", this pointer
