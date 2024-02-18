@@ -28,16 +28,18 @@ enum option
     OPTION_CHROMA_NOISE_FACTOR,
     OPTION_CHROMA_FIRE_FACTOR,
     OPTION_ECHO_OFFSET,
+    OPTION_SKEW,
     OPTION_HORIZONTAL_INSTABILITY,
     TOTAL_OPTIONS,
 };
 
 static char const *optionNames[TOTAL_OPTIONS] = {
-    "LUMA_NOISE_FACTOR",
-    "CHROMA_NOISE_FACTOR",
-    "CHROMA_FIRE_FACTOR",
-    "ECHO_OFFSET",
-    "HORIZONTAL_INSTABILITY",
+    "LUMA_NOISE",
+    "CHROMA_NOISE",
+    "CHROMA_FIRE",
+    "ECHO",
+    "SKEW",
+    "WOBBLE",
 };
 
 static int pause = 0;
@@ -126,19 +128,22 @@ static void decrementOption(double mul)
 {
     switch (currentOption) {
     case OPTION_LUMA_NOISE_FACTOR:
-        options->luma_noise_factor -= 0.01 * mul;
+        options->luma_noise -= 0.01 * mul;
         break;
     case OPTION_CHROMA_NOISE_FACTOR:
-        options->chroma_noise_factor -= 0.01 * mul;
+        options->chroma_noise -= 0.01 * mul;
         break;
     case OPTION_CHROMA_FIRE_FACTOR:
-        options->chroma_fire_factor -= 0.01 * mul;
+        options->chroma_fire -= 0.01 * mul;
         break;
     case OPTION_ECHO_OFFSET:
-        options->echo_offset -= 1;
+        options->echo -= 1;
+        break;
+    case OPTION_SKEW:
+        options->skew -= 1;
         break;
     case OPTION_HORIZONTAL_INSTABILITY:
-        options->horizontal_instability -= 1;
+        options->wobble -= 1;
         break;
     }
 }
@@ -147,19 +152,22 @@ static void incrementOption(double mul)
 {
     switch (currentOption) {
     case OPTION_LUMA_NOISE_FACTOR:
-        options->luma_noise_factor += 0.01 * mul;
+        options->luma_noise += 0.01 * mul;
         break;
     case OPTION_CHROMA_NOISE_FACTOR:
-        options->chroma_noise_factor += 0.01 * mul;
+        options->chroma_noise += 0.01 * mul;
         break;
     case OPTION_CHROMA_FIRE_FACTOR:
-        options->chroma_fire_factor += 0.01 * mul;
+        options->chroma_fire += 0.01 * mul;
         break;
     case OPTION_ECHO_OFFSET:
-        options->echo_offset += 1;
+        options->echo += 1;
+        break;
+    case OPTION_SKEW:
+        options->skew += 1;
         break;
     case OPTION_HORIZONTAL_INSTABILITY:
-        options->horizontal_instability += 1;
+        options->wobble += 1;
         break;
     }
 }
@@ -170,19 +178,22 @@ static void printOption(void)
 
     switch (currentOption) {
     case OPTION_LUMA_NOISE_FACTOR:
-        sprintf(buffer, "%.3f", options->luma_noise_factor);
+        sprintf(buffer, "%.3f", options->luma_noise);
         break;
     case OPTION_CHROMA_NOISE_FACTOR:
-        sprintf(buffer, "%.3f", options->chroma_noise_factor);
+        sprintf(buffer, "%.3f", options->chroma_noise);
         break;
     case OPTION_CHROMA_FIRE_FACTOR:
-        sprintf(buffer, "%.3f", options->chroma_fire_factor);
+        sprintf(buffer, "%.3f", options->chroma_fire);
         break;
     case OPTION_ECHO_OFFSET:
-        sprintf(buffer, "%d", options->echo_offset);
+        sprintf(buffer, "%d", options->echo);
+        break;
+    case OPTION_SKEW:
+        sprintf(buffer, "%d", options->skew);
         break;
     case OPTION_HORIZONTAL_INSTABILITY:
-        sprintf(buffer, "%d", options->horizontal_instability);
+        sprintf(buffer, "%d", options->wobble);
         break;
     }
 
@@ -221,18 +232,20 @@ static void keyInput(SDL_Scancode key, unsigned int mod)
         pingUpdate = 1;
         break;
     case SDL_SCANCODE_BACKSPACE:
-        options->luma_noise_factor = LIBSECAM_DEFAULT_LUMA_NOISE_FACTOR;
-        options->chroma_noise_factor = LIBSECAM_DEFAULT_CHROMA_NOISE_FACTOR;
-        options->chroma_fire_factor = LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR;
-        options->echo_offset = LIBSECAM_DEFAULT_ECHO_OFFSET;
-        options->horizontal_instability = LIBSECAM_DEFAULT_HORIZONTAL_INSTABILITY;
+        options->luma_noise = LIBSECAM_DEFAULT_LUMA_NOISE;
+        options->chroma_noise = LIBSECAM_DEFAULT_CHROMA_NOISE;
+        options->chroma_fire = LIBSECAM_DEFAULT_CHROMA_FIRE;
+        options->echo = LIBSECAM_DEFAULT_ECHO;
+        options->skew = LIBSECAM_DEFAULT_SKEW;
+        options->wobble = LIBSECAM_DEFAULT_WOBBLE;
         break;
     case SDL_SCANCODE_0:
-        options->luma_noise_factor = 0.0;
-        options->chroma_noise_factor = 0.0;
-        options->chroma_fire_factor = 0.0;
-        options->echo_offset = 0;
-        options->horizontal_instability = 0;
+        options->luma_noise = 0.0;
+        options->chroma_noise = 0.0;
+        options->chroma_fire = 0.0;
+        options->echo = 0;
+        options->skew = 0;
+        options->wobble = 0;
         break;
     default:
         break;

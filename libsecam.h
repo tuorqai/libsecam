@@ -59,12 +59,12 @@
 
 //------------------------------------------------------------------------------
 
-#define LIBSECAM_DEFAULT_LUMA_NOISE_FACTOR          0.07
-#define LIBSECAM_DEFAULT_CHROMA_NOISE_FACTOR        0.25
-#define LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR         4.0
-#define LIBSECAM_DEFAULT_ECHO_OFFSET                4
-#define LIBSECAM_DEFAULT_STABLE_SHIFT               2
-#define LIBSECAM_DEFAULT_HORIZONTAL_INSTABILITY     0
+#define LIBSECAM_DEFAULT_LUMA_NOISE                 0.07
+#define LIBSECAM_DEFAULT_CHROMA_NOISE               0.25
+#define LIBSECAM_DEFAULT_CHROMA_FIRE                0.04
+#define LIBSECAM_DEFAULT_ECHO                       4
+#define LIBSECAM_DEFAULT_SKEW                       2
+#define LIBSECAM_DEFAULT_WOBBLE                     0
 
 //------------------------------------------------------------------------------
 
@@ -78,12 +78,12 @@ extern "C" {
 
 typedef struct libsecam_options
 {
-    double luma_noise_factor;       // range: 0.0 to 1.0
-    double chroma_noise_factor;     // range: 0.0 to 1.0
-    double chroma_fire_factor;      // range: 0.0 to 100.0
-    int echo_offset;                // range: 0 to whatever
-    int stable_shift;               // range: 0 to whatever
-    int horizontal_instability;     // range: 0 to whatever
+    double luma_noise;              // range: 0.0 to 1.0
+    double chroma_noise;            // range: 0.0 to 1.0
+    double chroma_fire;             // range: 0.0 to 1.0
+    int echo;                       // range: 0 to whatever
+    int skew;                       // range: 0 to whatever
+    int wobble;                     // range: 0 to whatever
 } libsecam_options_t;
 
 libsecam_t *libsecam_init(int width, int height);
@@ -465,7 +465,10 @@ static void libsecam_apply_shift(double *line, int width, int shift, double fill
  * Simulates "fire" effect.
  * Also simulates chroma noise using the same method as fires.
  */
-static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, double *prev_chroma, int chroma_width, double factor, double noise_factor)
+static void libsecam_apply_fire(
+    double *luma, int luma_width,
+    double *chroma, double *prev_chroma, int chroma_width,
+    double factor, double noise_factor)
 {
     double gain = 0;
     double fall = 0;
@@ -509,7 +512,7 @@ static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, do
             + luma_delta * luma_factor
             + chroma_delta * chroma_factor);
 
-        double r = libsecam_frand() * 100.0;
+        double r = libsecam_frand();
 
         if (r < actual_factor) {
             // Start new fire.
@@ -532,13 +535,13 @@ static void libsecam_apply_fire(double *luma, int luma_width, double *chroma, do
             chroma[i] += gain * sign;
         }
 
-        if (r < 18.0) {
+        if (r < 0.18) {
             // Start noise fire.
             int const length = 4;
             
             noise_gain = noise_factor;
             noise_fall = noise_factor / length;
-            noise_sign = ((int) floor(r) % 2) ? -1.0 : 1.0;
+            noise_sign = ((int) floor(r * 100.0) % 2) ? -1.0 : 1.0;
 
             chroma[i] += noise_gain / 2.0 * noise_sign;
         } else if (noise_gain > 0.0) {
@@ -578,12 +581,12 @@ libsecam_t *libsecam_init(int width, int height)
     self->vert = LIBSECAM_MALLOC(sizeof(double) * height);
     self->chroma_buffer = LIBSECAM_MALLOC(width);
 
-    self->options.luma_noise_factor = LIBSECAM_DEFAULT_LUMA_NOISE_FACTOR;
-    self->options.chroma_noise_factor = LIBSECAM_DEFAULT_CHROMA_NOISE_FACTOR;
-    self->options.chroma_fire_factor = LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR;
-    self->options.echo_offset = LIBSECAM_DEFAULT_ECHO_OFFSET;
-    self->options.stable_shift = LIBSECAM_DEFAULT_STABLE_SHIFT;
-    self->options.horizontal_instability = LIBSECAM_DEFAULT_HORIZONTAL_INSTABILITY;
+    self->options.luma_noise = LIBSECAM_DEFAULT_LUMA_NOISE;
+    self->options.chroma_noise = LIBSECAM_DEFAULT_CHROMA_NOISE;
+    self->options.chroma_fire = LIBSECAM_DEFAULT_CHROMA_FIRE;
+    self->options.echo = LIBSECAM_DEFAULT_ECHO;
+    self->options.skew = LIBSECAM_DEFAULT_SKEW;
+    self->options.wobble = LIBSECAM_DEFAULT_WOBBLE;
 
     self->luma_loss = luma_loss;
     self->chroma_loss = chroma_loss;
@@ -616,7 +619,7 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
 {
     libsecam_convert_frame(self, src);
 
-    if (self->options.horizontal_instability > 0) {
+    if (self->options.wobble > 0) {
         for (int i = 0; i < self->height; i += 8) {
             self->vert[i] = libsecam_frand();
         }
@@ -626,7 +629,7 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
 
     int const luma_width = self->width / self->luma_loss;
 
-    if (self->options.stable_shift) {
+    if (self->options.skew) {
         for (int y = 0; y < self->height; y += 8) {
             double *luma = &self->luma[y * luma_width];
             double chunk_brightness = 0.0;
@@ -660,14 +663,14 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
 
         int shift = 0;
 
-        // Stable shift.
-        if (self->options.stable_shift > 0) {
-            shift += self->stable_shift_buffer[y] * self->options.stable_shift * 4;
+        // Skew (constant shift)
+        if (self->options.skew > 0) {
+            shift += self->stable_shift_buffer[y] * self->options.skew * 4;
         }
 
         // Unstable shift.
-        if (self->options.horizontal_instability > 0) {
-            shift += self->vert[y] * self->options.horizontal_instability;
+        if (self->options.wobble > 0) {
+            shift += self->vert[y] * self->options.wobble;
         }
 
         if (shift > 0) {
@@ -676,8 +679,8 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         }
 
         // Luminance echo+noise.
-        libsecam_apply_echo(luma, luma_width, shift / self->luma_loss, self->options.echo_offset);
-        libsecam_apply_noise(luma, luma_width, self->options.luma_noise_factor);
+        libsecam_apply_echo(luma, luma_width, shift / self->luma_loss, self->options.echo);
+        libsecam_apply_noise(luma, luma_width, self->options.luma_noise);
 
         // [Hack] Despite having name "prev_chroma", this pointer
         // points to the next chroma line. Why? Because previous line
@@ -690,8 +693,8 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         // Chroma noise+fire.
         libsecam_apply_fire(luma, luma_width,
             chroma, prev_chroma, chroma_width,
-            self->options.chroma_fire_factor,
-            self->options.chroma_noise_factor);
+            self->options.chroma_fire,
+            self->options.chroma_noise);
     }
 
     libsecam_revert_frame(self, dst);

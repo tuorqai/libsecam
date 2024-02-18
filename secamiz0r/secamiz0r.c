@@ -20,22 +20,22 @@ static void update_libsecam_options(libsecam_t *libsecam, double intensity)
     if (intensity < 0.25) {
         double const x = intensity / 0.25;
 
-        options->luma_noise_factor = 0.00;
-        options->chroma_noise_factor = 0.125;
-        options->chroma_fire_factor = 1.0 * x; /* 0.0 to 1.0 */
-        options->echo_offset = 2;
-        options->stable_shift = 0;
-        options->horizontal_instability = (x < 0.25) ? 0 : 2; /* 0 or 2 */
+        options->luma_noise = 0.00;
+        options->chroma_noise = 0.125;
+        options->chroma_fire = 0.01 * x; /* 0.0 to 0.01 */
+        options->echo = 2;
+        options->skew = 0;
+        options->wobble = (x < 0.25) ? 0 : 2; /* 0 or 2 */
     } else {
         double const x = (intensity - 0.25) / 0.75;
         double const xs = x * x;
 
-        options->luma_noise_factor = 0.5 * xs; /* 0.07 to 0.5, non-linear */
-        options->chroma_noise_factor = 0.125;
-        options->chroma_fire_factor = 1.0 + (19.0 * x); /* 1.0 to 20.0 */
-        options->echo_offset = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
-        options->stable_shift = options->echo_offset / 2;
-        options->horizontal_instability = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
+        options->luma_noise = 0.5 * xs; /* 0.07 to 0.5, non-linear */
+        options->chroma_noise = 0.125;
+        options->chroma_fire = 0.01 + (0.19 * x); /* 0.01 to 0.2 */
+        options->echo = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
+        options->skew = options->echo / 2; /* 1 to 4, non-linear */
+        options->wobble = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
     }
 }
 
