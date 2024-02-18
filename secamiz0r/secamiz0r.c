@@ -17,12 +17,6 @@ static void update_libsecam_options(libsecam_t *libsecam, double intensity)
 {
     libsecam_options_t *options = libsecam_options(libsecam);
 
-    // Deprecated options
-    options->luma_fire_factor = 0.0;
-    options->luma_loss_chance = 0.0;
-    options->chroma_shift_chance = 0.0;
-    options->chroma_loss_chance = 0.0;
-
     if (intensity < 0.25) {
         double const x = intensity / 0.25;
 

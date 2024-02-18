@@ -60,12 +60,8 @@
 //------------------------------------------------------------------------------
 
 #define LIBSECAM_DEFAULT_LUMA_NOISE_FACTOR          0.07
-#define LIBSECAM_DEFAULT_LUMA_FIRE_FACTOR           0.005   /* unused */
-#define LIBSECAM_DEFAULT_LUMA_LOSS_CHANCE           0.02    /* unused */
-#define LIBSECAM_DEFAULT_CHROMA_SHIFT_CHANCE        9.0     /* unused */
 #define LIBSECAM_DEFAULT_CHROMA_NOISE_FACTOR        0.25
 #define LIBSECAM_DEFAULT_CHROMA_FIRE_FACTOR         4.0
-#define LIBSECAM_DEFAULT_CHROMA_LOSS_CHANCE         0.03    /* unused */
 #define LIBSECAM_DEFAULT_ECHO_OFFSET                4
 #define LIBSECAM_DEFAULT_STABLE_SHIFT               2
 #define LIBSECAM_DEFAULT_HORIZONTAL_INSTABILITY     0
@@ -82,16 +78,12 @@ extern "C" {
 
 typedef struct libsecam_options
 {
-    double luma_noise_factor;       /* range: 0.0 to 1.0 */
-    double luma_fire_factor;        /* unused */
-    double luma_loss_chance;        /* unused */
-    double chroma_shift_chance;     /* unused */
-    double chroma_noise_factor;     /* range: 0.0 to 1.0 */
-    double chroma_fire_factor;      /* range: 0.0 to 100.0 */
-    double chroma_loss_chance;      /* unused */
-    int echo_offset;                /* range: 0 to whatever */
-    int stable_shift;               /* range: 0 to whatever */
-    int horizontal_instability;     /* range: 0 to whatever */
+    double luma_noise_factor;       // range: 0.0 to 1.0
+    double chroma_noise_factor;     // range: 0.0 to 1.0
+    double chroma_fire_factor;      // range: 0.0 to 100.0
+    int echo_offset;                // range: 0 to whatever
+    int stable_shift;               // range: 0 to whatever
+    int horizontal_instability;     // range: 0 to whatever
 } libsecam_options_t;
 
 libsecam_t *libsecam_init(int width, int height);
