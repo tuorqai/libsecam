@@ -21,7 +21,7 @@ static void update_libsecam_options(libsecam_t *libsecam, double intensity)
         double const x = intensity / 0.25;
 
         options->luma_noise = 0.00;
-        options->chroma_noise = 0.125;
+        options->chroma_noise = 0.25 + (0.25 * x); /* 0.25 to 0.5 */
         options->chroma_fire = 0.01 * x; /* 0.0 to 0.01 */
         options->echo = 2;
         options->skew = 0;
@@ -31,7 +31,7 @@ static void update_libsecam_options(libsecam_t *libsecam, double intensity)
         double const xs = x * x;
 
         options->luma_noise = 0.5 * xs; /* 0.07 to 0.5, non-linear */
-        options->chroma_noise = 0.125;
+        options->chroma_noise = 0.5 + (0.25 * xs); /* 0.5 to 0.75, non-linear */
         options->chroma_fire = 0.01 + (0.19 * x); /* 0.01 to 0.2 */
         options->echo = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
         options->skew = options->echo / 2; /* 1 to 4, non-linear */

@@ -137,16 +137,15 @@ struct libsecam_s
     int width;
     int height;
 
-    unsigned char *buffer;
-
     double *luma;
     double *chroma;
     double *stable_shift_buffer;
     double *vert;
     unsigned char *chroma_buffer;
 
-    int luma_loss;
-    int chroma_loss;
+    unsigned char *output;
+
+    int frame_count;
 };
 
 //------------------------------------------------------------------------------
@@ -314,26 +313,72 @@ static void libsecam_ycbcr_to_rgb(unsigned char *dst, unsigned char luma, unsign
  */
 static void libsecam_convert_frame(libsecam_t *self, unsigned char const *src)
 {
-    int const luma_width = self->width / self->luma_loss;
-    int const chroma_width = self->width / self->chroma_loss;
+    int shift = 0;
 
     for (int y = 0; y < self->height; y++) {
         unsigned char const *rgb = &src[y * self->width * 4];
-        double *luma = &self->luma[y * luma_width];
-        double *chroma = &self->chroma[y * chroma_width];
+        double *luma = &self->luma[y * self->width];
+        double *chroma = &self->chroma[y * self->width];
+        double brightness = 0.0;
 
-        for (int x_luma = 0; x_luma < luma_width; x_luma++) {
-            luma[x_luma] = libsecam_rgb_to_luma(&rgb[4 * self->luma_loss * x_luma]) / 255.0;
-        }
+        for (int x = 0; x < self->width; x++) {
+            int xs = x - shift;
 
-        for (int x_chroma = 0; x_chroma < chroma_width; x_chroma++) {
+            luma[x] = libsecam_rgb_to_luma(&rgb[xs * 4]) / 255.0;
+
             if (y % 2 == 0) {
-                chroma[x_chroma] = libsecam_rgb_to_cb(&rgb[4 * self->chroma_loss * x_chroma], self->chroma_loss) / 255.0;
+                chroma[x] = libsecam_rgb_to_cb(&rgb[xs * 4], 1) / 255.0;
             } else {
-                chroma[x_chroma] = libsecam_rgb_to_cr(&rgb[4 * self->chroma_loss * x_chroma], self->chroma_loss) / 255.0;
+                chroma[x] = libsecam_rgb_to_cr(&rgb[xs * 4], 1) / 255.0;
             }
+
+            brightness += luma[x];
         }
+
+        brightness /= self->width;
     }
+}
+
+static double libsecam_value_with_loss(double const *line, int width, int x, int loss)
+{
+    if (loss <= 1) {
+        return line[x];
+    }
+
+    // FIXME: this yields quite good result (but not yet accurate), though
+    // it seems to be too slow
+
+    double v = (1.0 / loss) * line[x];
+
+    for (int i = (-loss + 1); i <= (loss - 1); i++) {
+        if (i == 0) {
+            continue;
+        }
+
+        int n = x + i;
+
+        if (n < 0) {
+            n = 0;
+        } else if (n > (width - 1)) {
+            n = width - 1;
+        }
+
+        v += (1.0 / (2 * loss)) * line[n];
+    }
+
+    return v;
+
+/*
+    double f = 1.0 / loss;
+    double v = 0.0;
+
+    for (int i = 0; i < loss; i++) {
+        int n = x - i;
+        v += f * (n >= 0 ? line[n] : line[0]);
+    }
+
+    return v;
+*/
 }
 
 /**
@@ -342,16 +387,21 @@ static void libsecam_convert_frame(libsecam_t *self, unsigned char const *src)
  */
 static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
 {
-    int const luma_width = self->width / self->luma_loss;
-    int const chroma_width = self->width / self->chroma_loss;
+    // Simulate low luminance resolution: 240 TVL
+    int luma_loss = (int) ceil(self->width / 240.0);
+
+    // Simulate low chrominance resolution: 60 TVL
+    int chroma_loss = (int) ceil(self->width / 60.0);
 
     double const *prev_cb = self->chroma;
     double const *prev_cr = self->chroma;
 
+    memset(self->chroma_buffer, 128, self->width);
+
     for (int y = 0; y < self->height; y++) {
         unsigned char *rgb = &out[y * self->width * 4];
-        double const *luma = &self->luma[y * luma_width];
-        double const *chroma = &self->chroma[y * chroma_width];
+        double const *luma = &self->luma[y * self->width];
+        double const *chroma = &self->chroma[y * self->width];
 
         if (y % 2 == 0) {
             prev_cb = chroma;
@@ -360,39 +410,20 @@ static void libsecam_revert_frame(libsecam_t *self, unsigned char *out)
         }
 
         for (int x = 0; x < self->width; x++) {
-            int x0_luma = libsecam_clamp(0, luma_width - 1, x / self->luma_loss);
-            int x1_luma = libsecam_clamp(0, luma_width - 1, x0_luma + 1);
-            double x_luma = (1.0 / self->luma_loss) + (x % self->luma_loss) / (double) self->luma_loss;
+            double luma_val = libsecam_value_with_loss(luma, self->width, x, luma_loss);
+            double chroma_val = libsecam_value_with_loss(chroma, self->width, x, chroma_loss);
 
-            double luma_value = 255.0 * libsecam_lerp(
-                luma[x0_luma], luma[x1_luma],
-                x_luma
-            );
-
-            unsigned char yuv_y = libsecam_clamp(0, 255, luma_value);
-
-            int x0_chroma = libsecam_clamp(0, chroma_width - 1, x / self->chroma_loss);
-            int x1_chroma = libsecam_clamp(0, chroma_width - 1, x0_chroma + 1);
-            double x_chroma = (1.0 / self->chroma_loss) + (x % self->chroma_loss) / (double) self->chroma_loss;
-
-            double chroma_value = 255.0 * libsecam_lerp(
-                chroma[x0_chroma], chroma[x1_chroma],
-                x_chroma
-            );
-
-            unsigned char yuv_cb, yuv_cr;
+            unsigned char c0 = libsecam_clamp(0, 255, luma_val * 255.0);
+            unsigned char c1 = libsecam_clamp(0, 255, chroma_val * 255.0);
+            unsigned char c2 = self->chroma_buffer[x];
 
             if (y % 2 == 0) {
-                yuv_cb = libsecam_clamp(0, 255, chroma_value);
-                yuv_cr = self->chroma_buffer[x];
-                self->chroma_buffer[x] = yuv_cb;
+                libsecam_ycbcr_to_rgb(&rgb[4 * x], c0, c1, c2);
             } else {
-                yuv_cb = self->chroma_buffer[x];
-                yuv_cr = libsecam_clamp(0, 255, chroma_value);
-                self->chroma_buffer[x] = yuv_cr;
+                libsecam_ycbcr_to_rgb(&rgb[4 * x], c0, c2, c1);
             }
 
-            libsecam_ycbcr_to_rgb(&rgb[4 * x], yuv_y, yuv_cb, yuv_cr);
+            self->chroma_buffer[x] = c1;
         }
     }
 }
@@ -463,66 +494,36 @@ static void libsecam_apply_shift(double *line, int width, int shift, double fill
 
 /**
  * Simulates "fire" effect.
- * Also simulates chroma noise using the same method as fires.
  */
-static void libsecam_apply_fire(
-    double *luma, int luma_width,
-    double *chroma, double *prev_chroma, int chroma_width,
-    double factor, double noise_factor)
+static void libsecam_apply_fire(double *c0, double *c1, int width, double factor)
 {
     double gain = 0;
     double fall = 0;
     double sign = 0;
-    double const force = 0.25 + (libsecam_frand() * 0.5);
-
-    double noise_gain = 0;
-    double noise_fall = 0;
-    double noise_sign = 0;
 
     double const threshold = 0.48;
-    int const ratio = luma_width / chroma_width;
 
-    for (int i = 0; i < chroma_width; i++) {
-        double min = luma[i * ratio + 0];
-        double max = luma[i * ratio + 0];
+    for (int i = 0; i < width; i++) {
+        double d = fabsf(c1[i] - c0[i]);
 
-        for (int j = 0; j < ratio; j++) {
-            if (luma[i * ratio + j] < min) {
-                min = luma[i * ratio + j];
-            }
-
-            if (luma[i * ratio + j] > max) {
-                max = luma[i * ratio + j];
-            }
+        if (d < 0.4) {
+            d = 0.0;
         }
 
-        double luma_delta = max - min;
-        double chroma_delta = fabs(prev_chroma[i] - chroma[i]);
-
-        if (chroma_delta < 0.4) {
-            chroma_delta = 0.0;
-        }
-
-        double const random_factor = 0.01;
-        double const luma_factor = 0.07;
-        double const chroma_factor = 0.92;
-
-        double actual_factor = factor * (
-            + random_factor
-            + luma_delta * luma_factor
-            + chroma_delta * chroma_factor);
+        double actual_factor = factor * (0.01 + (0.99 * d));
 
         double r = libsecam_frand();
 
         if (r < actual_factor) {
             // Start new fire.
-            int const length = (int) floor(force * 32.0);
+            double force = 0.25 + (libsecam_frand() * 0.5);
+            int length = (int) floor(force * (width / 10.0));
 
             gain = force;
             fall = force / length;
-            sign = (chroma[i] > 0.75) ? -1.0 : 1.0;
+            sign = (c0[i] > 0.75) ? -1.0 : 1.0;
 
-            chroma[i] += gain / 2.0 * sign;
+            c0[i] += gain / 2.0 * sign;
         } else if (gain > 0.0) {
             // Continue drawing previously started fire.
             gain -= fall;
@@ -532,28 +533,7 @@ static void libsecam_apply_fire(
                 fall = 0.0;
             }
 
-            chroma[i] += gain * sign;
-        }
-
-        if (r < 0.18) {
-            // Start noise fire.
-            int const length = 4;
-            
-            noise_gain = noise_factor;
-            noise_fall = noise_factor / length;
-            noise_sign = ((int) floor(r * 100.0) % 2) ? -1.0 : 1.0;
-
-            chroma[i] += noise_gain / 2.0 * noise_sign;
-        } else if (noise_gain > 0.0) {
-            // Continue drawing previously started noise.
-            noise_gain -= noise_fall;
-
-            if (noise_gain < 0.0) {
-                noise_gain = 0.0;
-                noise_fall = 0.0;
-            }
-
-            chroma[i] += noise_gain * noise_sign;
+            c0[i] += gain * sign;
         }
     }
 }
@@ -568,15 +548,19 @@ libsecam_t *libsecam_init(int width, int height)
         return NULL;
     }
 
-    int const luma_loss = 1; // used to be 1 or 2 depending on horizontal resolution
-    int const chroma_loss = 4; // used to be 4 or 8 depending on vertical resolution
+    memset(self, 0, sizeof(*self));
 
     self->width = width;
     self->height = height;
-    self->buffer = NULL; // Will be initialized later if used.
 
-    self->luma = LIBSECAM_MALLOC(sizeof(double) * width * height / luma_loss);
-    self->chroma = LIBSECAM_MALLOC(sizeof(double) * width * height / chroma_loss);
+    self->luma = LIBSECAM_MALLOC(sizeof(*self->luma) * self->width * self->height);
+    self->chroma = LIBSECAM_MALLOC(sizeof(*self->chroma) * self->width * self->height);
+
+    if (!self->luma || !self->chroma) {
+        libsecam_close(self);
+        return NULL;
+    }
+
     self->stable_shift_buffer = LIBSECAM_MALLOC(sizeof(*self->stable_shift_buffer) * height);
     self->vert = LIBSECAM_MALLOC(sizeof(double) * height);
     self->chroma_buffer = LIBSECAM_MALLOC(width);
@@ -588,13 +572,14 @@ libsecam_t *libsecam_init(int width, int height)
     self->options.skew = LIBSECAM_DEFAULT_SKEW;
     self->options.wobble = LIBSECAM_DEFAULT_WOBBLE;
 
-    self->luma_loss = luma_loss;
-    self->chroma_loss = chroma_loss;
+    self->output = NULL; // Will be initialized later if used.
 
-    if (!self->luma || !self->chroma || !self->stable_shift_buffer || !self->vert || !self->chroma_buffer) {
+    if (!self->stable_shift_buffer || !self->vert || !self->chroma_buffer) {
         libsecam_close(self);
         return NULL;
     }
+
+    self->frame_count = 0;
 
     return self;
 }
@@ -606,7 +591,7 @@ void libsecam_close(libsecam_t *self)
     LIBSECAM_FREE(self->vert);
     LIBSECAM_FREE(self->chroma);
     LIBSECAM_FREE(self->luma);
-    LIBSECAM_FREE(self->buffer);
+    LIBSECAM_FREE(self->output);
     LIBSECAM_FREE(self);
 }
 
@@ -627,21 +612,19 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         libsecam_lerp_line(self->vert, self->height, 8);
     }
 
-    int const luma_width = self->width / self->luma_loss;
-
     if (self->options.skew) {
         for (int y = 0; y < self->height; y += 8) {
-            double *luma = &self->luma[y * luma_width];
+            double *luma = &self->luma[y * self->width];
             double chunk_brightness = 0.0;
 
             for (int y1 = y; y1 < (y + 8); y1++) {
                 double line_brightness = 0.0;
 
-                for (int x = 0; x < luma_width; x++) {
+                for (int x = 0; x < self->width; x++) {
                     line_brightness += luma[x];
                 }
 
-                line_brightness /= (double) luma_width;
+                line_brightness /= (double) self->width;
                 chunk_brightness += line_brightness;
             }
 
@@ -652,14 +635,11 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         libsecam_lerp_line(self->stable_shift_buffer, self->height, 8);
     }
 
-    int const chroma_width = self->width / self->chroma_loss;
-    double *prev_chroma = self->chroma;
-
-    memset(self->chroma_buffer, 128, self->width);
+    double *c1 = self->chroma;
 
     for (int y = 0; y < self->height; y++) {
-        double *luma = &self->luma[y * luma_width];
-        double *chroma = &self->chroma[y * chroma_width];
+        double *luma = &self->luma[y * self->width];
+        double *c0 = &self->chroma[y * self->width];
 
         int shift = 0;
 
@@ -674,45 +654,42 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
         }
 
         if (shift > 0) {
-            libsecam_apply_shift(luma, luma_width, shift / self->luma_loss, 0.0);
-            libsecam_apply_shift(chroma, chroma_width, shift / self->chroma_loss, 0.5);
+            libsecam_apply_shift(luma, self->width, shift, 0.0);
+            libsecam_apply_shift(c0, self->width, shift, 0.5);
         }
 
         // Luminance echo+noise.
-        libsecam_apply_echo(luma, luma_width, shift / self->luma_loss, self->options.echo);
-        libsecam_apply_noise(luma, luma_width, self->options.luma_noise);
-
-        // [Hack] Despite having name "prev_chroma", this pointer
-        // points to the next chroma line. Why? Because previous line
-        // was already altered with fire effect and the next line
-        // is still clean. _apply_fire() function needs two clean lines
-        // to work correctly, otherwise the image will become too pink
-        // (resonance-like effect?).
-        prev_chroma = (y == self->height - 1) ? chroma : chroma + chroma_width;
+        libsecam_apply_echo(luma, self->width, shift, self->options.echo);
+        libsecam_apply_noise(luma, self->width, self->options.luma_noise);
 
         // Chroma noise+fire.
-        libsecam_apply_fire(luma, luma_width,
-            chroma, prev_chroma, chroma_width,
-            self->options.chroma_fire,
-            self->options.chroma_noise);
+        libsecam_apply_fire(c0, c1, self->width, self->options.chroma_fire);
+        libsecam_apply_noise(c0, self->width, self->options.chroma_noise);
+
+        c1 = c0;
+
+        luma[0] = luma[self->width - 1] = 0.0;
+        c0[0] = c0[self->width - 1] = 0.5;
     }
 
     libsecam_revert_frame(self, dst);
+
+    self->frame_count++;
 }
 
 unsigned char const *libsecam_filter(libsecam_t *self, unsigned char const *src)
 {
-    if (!self->buffer) {
-        self->buffer = LIBSECAM_MALLOC(self->width * self->height * 4);
+    if (!self->output) {
+        self->output = LIBSECAM_MALLOC(self->width * self->height * 4);
 
-        if (!self->buffer) {
+        if (!self->output) {
             return NULL;
         }
     }
 
-    libsecam_filter_to_buffer(self, src, self->buffer);
+    libsecam_filter_to_buffer(self, src, self->output);
 
-    return self->buffer;
+    return self->output;
 }
 
 //------------------------------------------------------------------------------
