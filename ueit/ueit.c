@@ -16,6 +16,7 @@
 
 #include <stdio.h>
 #include <SDL.h>
+#include <SDL_image.h>
 
 #define LIBSECAM_IMPLEMENTATION
 #include "../libsecam.h"
@@ -54,11 +55,11 @@ static int pingUpdate = 0;
 
 //------------------------------------------------------------------------------
 
-static SDL_Surface *loadBMP(char const *path)
+static SDL_Surface *loadImage(char const *path)
 {
     SDL_Surface *src, *conv;
 
-    if ((src = SDL_LoadBMP(path)) == NULL) {
+    if ((src = IMG_Load(path)) == NULL) {
         return NULL;
     }
 
@@ -89,7 +90,11 @@ static int initialize(char const *path)
         return 1;
     }
 
-    SDL_SetHint(SDL_HINT_RENDER_LOGICAL_SIZE_MODE, "overscan");
+    if (IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG) == 0) {
+        return 1;
+    }
+
+    SDL_SetHint(SDL_HINT_RENDER_LOGICAL_SIZE_MODE, "letterbox");
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 
     if (SDL_CreateWindowAndRenderer(720, 576, SDL_WINDOW_RESIZABLE, &window, &renderer) == -1) {
@@ -101,15 +106,16 @@ static int initialize(char const *path)
     SDL_RenderSetVSync(renderer, 1);
     SDL_RenderSetLogicalSize(renderer, 720, 576);
 
-    if ((ueitSurface = loadBMP(path ? path : "ueit.bmp")) == NULL) {
+    if ((ueitSurface = loadImage(path ? path : "ueit.bmp")) == NULL) {
         return 1;
     }
 
-    if ((ueitTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STREAMING, 720, 576)) == NULL) {
+    if ((ueitTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32,
+        SDL_TEXTUREACCESS_STREAMING, ueitSurface->w, ueitSurface->h)) == NULL) {
         return 1;
     }
 
-    libsecam = libsecam_init(720, 576);
+    libsecam = libsecam_init(ueitSurface->w, ueitSurface->h);
     options = libsecam_options(libsecam);
 
     return 0;
@@ -122,6 +128,8 @@ static void terminate(void)
     SDL_FreeSurface(ueitSurface);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    IMG_Quit();
+    SDL_Quit();
 }
 
 static void decrementOption(double mul)
@@ -297,7 +305,7 @@ static void loop(void)
         unsigned char const *filtered = libsecam_filter(libsecam, ueitSurface->pixels);
         SDL_LockSurface(ueitSurface);
 
-        fillTexture(ueitTexture, filtered, 720, 576);
+        fillTexture(ueitTexture, filtered, ueitSurface->w, ueitSurface->h);
 
         if (pingUpdate) {
             pingUpdate = 0;

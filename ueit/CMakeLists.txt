@@ -1,8 +1,9 @@
 
 find_package(SDL2 CONFIG REQUIRED)
+find_package(SDL2_image CONFIG REQUIRED)
 
 add_executable(ueit ueit.c)
-target_link_libraries(ueit PRIVATE SDL2::SDL2 SDL2::SDL2main libsecam)
+target_link_libraries(ueit PRIVATE SDL2::SDL2 SDL2::SDL2main SDL2_image::SDL2_image libsecam)
 
 if(WIN32)
     set(UEIT_INSTALL_DIR "ueit")
