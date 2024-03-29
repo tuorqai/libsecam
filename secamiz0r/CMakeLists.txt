@@ -10,6 +10,3 @@ add_library(${TARGET} MODULE ${SOURCES})
 target_link_libraries(${TARGET} PRIVATE libsecam)
 set_target_properties(${TARGET} PROPERTIES PREFIX "")
 install(TARGETS ${TARGET} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
-find_package(Threads)
-target_link_libraries(${TARGET} PRIVATE Threads::Threads)
