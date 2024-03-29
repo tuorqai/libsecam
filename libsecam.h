@@ -143,8 +143,6 @@ libsecam_options_t *libsecam_options(libsecam_t *self);
 
 //------------------------------------------------------------------------------
 
-#define LIBSECAM_SAFE_AREA          16
-
 #define LIBSECAM_CLAMP(x, a, b) \
     (x) < (a) ? (a) : ((x) >= (b) ? (b) : (x))
 
@@ -331,20 +329,26 @@ static void libsecam_revert_line(libsecam_t *self, int y,
         shift += self->vertical_level[y] * self->options.skew;
     }
 
-    shift = LIBSECAM_CLAMP(shift, -LIBSECAM_SAFE_AREA, LIBSECAM_SAFE_AREA);
-
     for (int x = 0; x < width; x++) {
         int y_val = 0;
         int cb_val = 0;
         int cr_val = 0;
 
         for (int i = 0; i < self->luma_loss; i++) {
-            y_val += luma_factor * luma[x - i - shift];
+            int n = x - i - shift;
+
+            if (n >= 0 && n < width) {
+                y_val += luma_factor * luma[n];
+            }
         }
 
         for (int i = 0; i < self->chroma_loss; i++) {
-            cb_val += chroma_factor * cb[x - i - shift];
-            cr_val += chroma_factor * cr[x - i - shift];
+            int n = x - i - shift;
+
+            if (n >= 0 && n < width) {
+                cb_val += chroma_factor * cb[n];
+                cr_val += chroma_factor * cr[n];
+            }
         }
 
         int r = LIBSECAM_YCBCR_TO_R(y_val, 128 + cb_val, 128 + cr_val);
@@ -366,11 +370,12 @@ static void libsecam_filter_luma(int *luma, int width, libsecam_options_t const 
     double noise = options->luma_noise;
 
     for (int x = 0; x < width; x++) {
-        double u = luma[x - options->echo];
-        double v = luma[x];
-
         // Apply echo.
-        luma[x] = v - (u * 0.5) + (v * 0.5);
+        if (options->echo) {
+            double u = luma[LIBSECAM_CLAMP(x - options->echo, 0, width)];
+            double v = luma[x];
+            luma[x] = v - (u * 0.5) + (v * 0.5);
+        }
 
         // Apply noise.
         luma[x] += noise * ((libsecam_fastrand() % 255) - 128);
@@ -423,23 +428,9 @@ static void libsecam_filter_chroma(int const *luma, int *cu, int const *cv, int 
  */
 static void libsecam_perform(libsecam_t *self, int job, int y0, int y1, unsigned char const *src, unsigned char *dst)
 {
-    int *luma = self->luma[job] + LIBSECAM_SAFE_AREA;
-    int *cu = self->chroma_u[job] + LIBSECAM_SAFE_AREA;
-    int *cv = self->chroma_v[job] + LIBSECAM_SAFE_AREA;
-
-    // Clear left safe area.
-    for (int x = -LIBSECAM_SAFE_AREA; x < 0; x++) {
-        luma[x] = 0;
-        cu[x] = 0;
-        cv[x] = 0;
-    }
-
-    // Clear right safe area.
-    for (int x = self->width; x < self->width + LIBSECAM_SAFE_AREA; x++) {
-        luma[x] = 0;
-        cu[x] = 0;
-        cv[x] = 0;
-    }
+    int *luma = self->luma[job];
+    int *cu = self->chroma_u[job];
+    int *cv = self->chroma_v[job];
 
     libsecam_convert_line_cb(luma, cu, &src[self->width * 4 * y0], self->width);
     libsecam_convert_line_cr(luma, cv, &src[self->width * 4 * y0], self->width);
@@ -509,12 +500,10 @@ libsecam_t *libsecam_init(int width, int height)
     self->width = width;
     self->height = height;
 
-    int safe_width = self->width + (LIBSECAM_SAFE_AREA * 2);
-
     for (int i = 0; i < LIBSECAM_NUM_THREADS; i++) {
-        self->luma[i] = LIBSECAM_MALLOC(sizeof(*self->luma) * safe_width);
-        self->chroma_u[i] = LIBSECAM_MALLOC(sizeof(*self->chroma_u) * safe_width);
-        self->chroma_v[i] = LIBSECAM_MALLOC(sizeof(*self->chroma_v) * safe_width);
+        self->luma[i] = LIBSECAM_MALLOC(sizeof(*self->luma) * self->width);
+        self->chroma_u[i] = LIBSECAM_MALLOC(sizeof(*self->chroma_u) * self->width);
+        self->chroma_v[i] = LIBSECAM_MALLOC(sizeof(*self->chroma_v) * self->width);
     }
 
     self->vertical_noise = LIBSECAM_MALLOC(sizeof(*self->vertical_noise) * self->height);
