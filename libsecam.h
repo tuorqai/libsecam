@@ -288,59 +288,9 @@ static int libsecam_fastrand(void)
 /**
  * Convert RGB line to YCbCr.
  */
-static void libsecam_convert_line(int *luma, int *cb, int *cr,
-    unsigned char const *src, int width)
+static void libsecam_convert_line(libsecam_t *self, unsigned char const *src,
+    int *luma, int *cb, int *cr, int y)
 {
-    for (int x = 0; x < width; x++) {
-        double r = src[4 * x + 0] / 255.0;
-        double g = src[4 * x + 1] / 255.0;
-        double b = src[4 * x + 2] / 255.0;
-
-        luma[x] = LIBSECAM_RGB_TO_Y(r, g, b);
-        cb[x] = LIBSECAM_RGB_TO_CB(r, g, b);
-        cr[x] = LIBSECAM_RGB_TO_CR(r, g, b);
-    }
-}
-
-/**
- * Convert RGB line to Y-Cb (blue).
- */
-static void libsecam_convert_line_cb(int *luma, int *chroma, unsigned char const *src, int width)
-{
-    for (int x = 0; x < width; x++) {
-        double r = src[4 * x + 0] / 255.0;
-        double g = src[4 * x + 1] / 255.0;
-        double b = src[4 * x + 2] / 255.0;
-
-        luma[x] = LIBSECAM_RGB_TO_Y(r, g, b);
-        chroma[x] = LIBSECAM_RGB_TO_CB(r, g, b);
-    }
-}
-
-/**
- * Convert RGB line to Y-Cr (red).
- */
-static void libsecam_convert_line_cr(int *luma, int *chroma, unsigned char const *src, int width)
-{
-    for (int x = 0; x < width; x++) {
-        double r = src[4 * x + 0] / 255.0;
-        double g = src[4 * x + 1] / 255.0;
-        double b = src[4 * x + 2] / 255.0;
-
-        luma[x] = LIBSECAM_RGB_TO_Y(r, g, b);
-        chroma[x] = LIBSECAM_RGB_TO_CR(r, g, b);
-    }
-}
-
-/**
- * Convert YCbCr line to RGB.
- */
-static void libsecam_revert_line(libsecam_t *self, int y,
-    unsigned char *dst, int *luma, int *cb, int *cr, int width)
-{
-    double luma_factor = 1.0 / self->luma_loss;
-    double chroma_factor = 1.0 / self->chroma_loss;
-
     int shift = 0;
 
     if (self->options.wobble) {
@@ -351,23 +301,51 @@ static void libsecam_revert_line(libsecam_t *self, int y,
         shift += self->vertical_level[y] * self->options.skew;
     }
 
-    for (int x = 0; x < width; x++) {
+    for (int x = 0; x < self->width; x++) {
+        int n = x - shift;
+
+        double r = 0.0;
+        double g = 0.0;
+        double b = 0.0;
+
+        if (n >= 0 && n < self->width) {
+            r = src[4 * n + 0] / 255.0;
+            g = src[4 * n + 1] / 255.0;
+            b = src[4 * n + 2] / 255.0;
+        }
+
+        luma[x] = LIBSECAM_RGB_TO_Y(r, g, b);
+        cb[x] = LIBSECAM_RGB_TO_CB(r, g, b);
+        cr[x] = LIBSECAM_RGB_TO_CR(r, g, b);
+    }
+}
+
+/**
+ * Convert YCbCr line to RGB.
+ */
+static void libsecam_revert_line(libsecam_t *self, unsigned char *dst,
+    int *luma, int *cb, int *cr)
+{
+    double luma_factor = 1.0 / self->luma_loss;
+    double chroma_factor = 1.0 / self->chroma_loss;
+
+    for (int x = 0; x < self->width; x++) {
         int y_val = 0;
         int cb_val = 0;
         int cr_val = 0;
 
         for (int i = 0; i < self->luma_loss; i++) {
-            int n = x - i - shift;
+            int n = x - i;
 
-            if (n >= 0 && n < width) {
+            if (n >= 0 && n < self->width) {
                 y_val += luma_factor * luma[n];
             }
         }
 
         for (int i = 0; i < self->chroma_loss; i++) {
-            int n = x - i - shift;
+            int n = x - i;
 
-            if (n >= 0 && n < width) {
+            if (n >= 0 && n < self->width) {
                 cb_val += chroma_factor * cb[n];
                 cr_val += chroma_factor * cr[n];
             }
@@ -387,15 +365,15 @@ static void libsecam_revert_line(libsecam_t *self, int y,
 /**
  * Apply effects to luminance.
  */
-static void libsecam_filter_luma(int *luma, int *osci, int width,
-    libsecam_options_t const *options)
+static void libsecam_filter_luma(libsecam_t *self, int *luma, int *osci)
 {
-    double noise = options->luma_noise;
+    double noise = self->options.luma_noise;
+    int echo = self->options.echo;
 
-    for (int x = 0; x < width; x++) {
+    for (int x = 0; x < self->width; x++) {
         // Apply echo.
-        if (options->echo) {
-            double u = luma[LIBSECAM_CLAMP(x - options->echo, 0, width)];
+        if (echo) {
+            double u = luma[LIBSECAM_CLAMP(x - echo, 0, self->width)];
             double v = luma[x];
             luma[x] = v - (u * 0.5) + (v * 0.5);
         }
@@ -414,19 +392,19 @@ static void libsecam_filter_luma(int *luma, int *osci, int width,
 /**
  * Apply effects to chrominance.
  */
-static void libsecam_filter_chroma(int *cu, int *cv, int const *osci,
-    int width, libsecam_options_t const *options)
+static void libsecam_filter_chroma(libsecam_t *self, int *cu, int *cv,
+    int const *osci)
 {
-    double noise = options->chroma_noise;
-    double fire = options->chroma_fire;
+    double noise = self->options.chroma_noise;
+    double fire = self->options.chroma_fire;
 
     int threshold = 256 - (fire * 256);
 
     int gain = 0;
     int floor_ = 0;
-    int fall = 2560 / width;
+    int fall = 2560 / self->width;
 
-    for (int x = 0; x < width; x++) {
+    for (int x = 0; x < self->width; x++) {
         if (gain > floor_) {
             if (gain > 0) {
                 cu[x] += gain;
@@ -459,26 +437,25 @@ static void libsecam_perform(libsecam_t *self, int job, int y0, int y1, unsigned
     int *cr = self->cr[job];
     int *cx = self->cx[job];
 
-    libsecam_convert_line(luma, cb, cr, &src[self->width * 4 * y0], self->width);
+    libsecam_convert_line(self, &src[self->width * 4 * y0], luma, cb, cr, y0);
 
-    libsecam_filter_luma(luma, osci, self->width, &self->options);
-    libsecam_filter_chroma(cb, cr, osci, self->width, &self->options);
+    libsecam_filter_luma(self, luma, osci);
+    libsecam_filter_chroma(self, cb, cr, osci);
     memcpy(cx, cr, sizeof(*cx) * self->width);
 
     for (int y = y0; y < y1; y++) {
         size_t row = self->width * 4 * y;
 
-        libsecam_convert_line(luma, cb, cr, &src[row], self->width);
-
-        libsecam_filter_luma(luma, osci, self->width, &self->options);
+        libsecam_convert_line(self, &src[row], luma, cb, cr, y);
+        libsecam_filter_luma(self, luma, osci);
 
         if ((y % 2) == 0) {
-            libsecam_filter_chroma(cb, cr, osci, self->width, &self->options);
-            libsecam_revert_line(self, y, &dst[row], luma, cb, cx, self->width);
+            libsecam_filter_chroma(self, cb, cr, osci);
+            libsecam_revert_line(self, &dst[row], luma, cb, cx);
             memcpy(cx, cb, sizeof(*cx) * self->width);
         } else {
-            libsecam_filter_chroma(cr, cb, osci, self->width, &self->options);
-            libsecam_revert_line(self, y, &dst[row], luma, cx, cr, self->width);
+            libsecam_filter_chroma(self, cr, cb, osci);
+            libsecam_revert_line(self, &dst[row], luma, cx, cr);
             memcpy(cx, cr, sizeof(*cx) * self->width);
         }
     }
