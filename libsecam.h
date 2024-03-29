@@ -370,6 +370,8 @@ static void libsecam_filter_luma(libsecam_t *self, int *luma, int *osci)
     double noise = self->options.luma_noise;
     int echo = self->options.echo;
 
+    int prev = luma[0];
+
     for (int x = 0; x < self->width; x++) {
         // Apply echo.
         if (echo) {
@@ -385,7 +387,8 @@ static void libsecam_filter_luma(libsecam_t *self, int *luma, int *osci)
         luma[x] = LIBSECAM_CLAMP(luma[x], 0, 255);
 
         // Calculate oscillation.
-        osci[x] = abs(luma[x] - luma[x - 1]);
+        osci[x] = abs(luma[x] - prev);
+        prev = luma[x];
     }
 }
 
@@ -398,27 +401,27 @@ static void libsecam_filter_chroma(libsecam_t *self, int *cu, int *cv,
     double noise = self->options.chroma_noise;
     double fire = self->options.chroma_fire;
 
-    int threshold = 256 - (fire * 256);
+    int threshold = 48;
 
     int gain = 0;
-    int floor_ = 0;
     int fall = 2560 / self->width;
+    int sign = -1;
 
     for (int x = 0; x < self->width; x++) {
-        if (gain > floor_) {
-            if (gain > 0) {
-                cu[x] += gain;
-            }
-
+        if (gain > 0) {
+            cu[x] += gain * sign;
             gain -= fall;
         } else {
-            int luma_oscillation = osci[x] - (libsecam_fastrand() % 256);
-            int chroma_oscillation = abs(cu[x] - cv[x]);
-            int oscillation = luma_oscillation * 0.25 + chroma_oscillation * 0.75;
+            double r = libsecam_fastrand() / 32768.0;
 
-            if (oscillation > threshold) {
-                gain = 128 + (libsecam_fastrand() % 128);
-                floor_ = -(libsecam_fastrand() % 255);
+            if (r < (fire / 20.0)) {
+                int u = osci[x] / 2;
+                int v = abs(cu[x] - cv[x]) / 2;
+
+                if ((u + v) > threshold) {
+                    gain = 128 + (libsecam_fastrand() % 128);
+                    sign = (cu[x] > 64) ? -1 : +1;
+                }
             }
         }
 
@@ -437,11 +440,13 @@ static void libsecam_perform(libsecam_t *self, int job, int y0, int y1, unsigned
     int *cr = self->cr[job];
     int *cx = self->cx[job];
 
-    libsecam_convert_line(self, &src[self->width * 4 * y0], luma, cb, cr, y0);
-
-    libsecam_filter_luma(self, luma, osci);
-    libsecam_filter_chroma(self, cb, cr, osci);
-    memcpy(cx, cr, sizeof(*cx) * self->width);
+    if (y0 == 0) {
+        memset(cx, 0, sizeof(*cx) * self->width);
+    } else {
+        libsecam_convert_line(self, &src[self->width * 4 * (y0 - 1)],
+            luma, cb, cr, y0);
+        memcpy(cx, cr, sizeof(*cx) * self->width);
+    }
 
     for (int y = y0; y < y1; y++) {
         size_t row = self->width * 4 * y;

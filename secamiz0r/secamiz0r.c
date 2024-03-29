@@ -17,26 +17,15 @@ static void update_libsecam_options(libsecam_t *libsecam, double intensity)
 {
     libsecam_options_t *options = libsecam_options(libsecam);
 
-    if (intensity < 0.25) {
-        double const x = intensity / 0.25;
+    double const x = intensity;
+    double const xs = x * x;
 
-        options->luma_noise = 0.00;
-        options->chroma_noise = 0.25 + (0.25 * x); /* 0.25 to 0.5 */
-        options->chroma_fire = 0.01 * x; /* 0.0 to 0.01 */
-        options->echo = 2;
-        options->skew = 0;
-        options->wobble = (x < 0.25) ? 0 : 2; /* 0 or 2 */
-    } else {
-        double const x = (intensity - 0.25) / 0.75;
-        double const xs = x * x;
-
-        options->luma_noise = 0.5 * xs; /* 0.07 to 0.5, non-linear */
-        options->chroma_noise = 0.5 + (0.25 * xs); /* 0.5 to 0.75, non-linear */
-        options->chroma_fire = 0.01 + (0.19 * x); /* 0.01 to 0.2 */
-        options->echo = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
-        options->skew = options->echo / 2; /* 1 to 4, non-linear */
-        options->wobble = (int) ceilf(2.0 + (6.0 * xs)); /* 2 to 8, non-linear */
-    }
+    options->luma_noise = 0.05 + (0.95 * xs);
+    options->chroma_noise = 0.25 + (0.75 * xs);
+    options->chroma_fire = xs;
+    options->echo = (int) ceilf(6.0 * x);
+    options->skew = options->echo / 2;
+    options->wobble = options->echo / 2;
 }
 
 int f0r_init(void)
