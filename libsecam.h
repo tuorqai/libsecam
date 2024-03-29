@@ -216,7 +216,9 @@ struct libsecam_s
     int *luma[LIBSECAM_NUM_THREADS];
     int *chroma_u[LIBSECAM_NUM_THREADS];
     int *chroma_v[LIBSECAM_NUM_THREADS];
-    double *per_line_values;
+
+    double *vertical_noise;
+    double *vertical_level;
 
     int luma_loss;
     int chroma_loss;
@@ -322,7 +324,11 @@ static void libsecam_revert_line(libsecam_t *self, int y,
     int shift = 0;
 
     if (self->options.wobble) {
-        shift += self->per_line_values[y] * self->options.wobble;
+        shift += self->vertical_noise[y] * self->options.wobble;
+    }
+
+    if (self->options.skew) {
+        shift += self->vertical_level[y] * self->options.skew;
     }
 
     shift = LIBSECAM_CLAMP(shift, -LIBSECAM_SAFE_AREA, LIBSECAM_SAFE_AREA);
@@ -511,7 +517,8 @@ libsecam_t *libsecam_init(int width, int height)
         self->chroma_v[i] = LIBSECAM_MALLOC(sizeof(*self->chroma_v) * safe_width);
     }
 
-    self->per_line_values = LIBSECAM_MALLOC(sizeof(*self->per_line_values) * self->height);
+    self->vertical_noise = LIBSECAM_MALLOC(sizeof(*self->vertical_noise) * self->height);
+    self->vertical_level = LIBSECAM_MALLOC(sizeof(*self->vertical_level) * self->height);
 
     self->output = NULL; // Will be initialized later if used.
     self->frame_count = 0;
@@ -521,7 +528,8 @@ libsecam_t *libsecam_init(int width, int height)
 
 void libsecam_close(libsecam_t *self)
 {
-    LIBSECAM_FREE(self->per_line_values);
+    LIBSECAM_FREE(self->vertical_noise);
+    LIBSECAM_FREE(self->vertical_level);
 
     for (int i = 0; i < LIBSECAM_NUM_THREADS; i++) {
         LIBSECAM_FREE(self->luma[i]);
@@ -557,10 +565,32 @@ void libsecam_filter_to_buffer(libsecam_t *self, unsigned char const *src, unsig
     int step = self->height / 64;
 
     for (int y = 0; y < self->height; y += step) {
-        self->per_line_values[y] = libsecam_fastrand() / 32768.0;
+        self->vertical_noise[y] = libsecam_fastrand() / 32768.0;
     }
 
-    libsecam_lerp_line(self->per_line_values, self->height, step);
+    // Measure brightness real quick.
+
+    for (int y = 0; y < self->height; y++) {
+        int brightness = 0;
+
+        for (int x = 0; x < self->width; x++) {
+            int green = src[self->width * 4 * y + 4 * x + 1];
+            brightness += green;
+        }
+
+        self->vertical_level[y] = brightness / self->width / 255.0;
+    }
+
+    for (int y = 0; y < self->height; y += step) {
+        for (int j = 1; j < step; j++) {
+            self->vertical_level[y] += self->vertical_level[y + 1];
+        }
+
+        self->vertical_level[y] /= (double) step;
+    }
+
+    libsecam_lerp_line(self->vertical_noise, self->height, step);
+    libsecam_lerp_line(self->vertical_level, self->height, step);
 
 #ifndef LIBSECAM_USE_THREADS
     libsecam_perform(self, 0, 0, self->height, src, dst);
