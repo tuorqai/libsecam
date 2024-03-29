@@ -25,6 +25,7 @@
 // Width should be divisible by 8, height should be divisible by 2.
 //
 // Version history:
+//      4.0     2024.03.30  Almost completely rewritten, added multithreading
 //      3.5a    2024.02.14  Minor updates
 //      3.5     2024.02.14  Update echo effect (no more dark image)
 //      3.4     2024.02.13  Separate stable shift option
