@@ -52,6 +52,9 @@ static libsecam_t *libsecam = NULL;
 static libsecam_options_t *options = NULL;
 static enum option currentOption = 0;
 static int pingUpdate = 0;
+static char optionText[256];
+
+static void updateWindowTitle(void);
 
 //------------------------------------------------------------------------------
 
@@ -182,30 +185,33 @@ static void incrementOption(double mul)
 
 static void printOption(void)
 {
-    char buffer[256];
+    char buffer[64];
 
     switch (currentOption) {
     case OPTION_LUMA_NOISE_FACTOR:
-        sprintf(buffer, "%.3f", options->luma_noise);
+        snprintf(buffer, sizeof(buffer) - 1, "%.3f", options->luma_noise);
         break;
     case OPTION_CHROMA_NOISE_FACTOR:
-        sprintf(buffer, "%.3f", options->chroma_noise);
+        snprintf(buffer, sizeof(buffer) - 1, "%.3f", options->chroma_noise);
         break;
     case OPTION_CHROMA_FIRE_FACTOR:
-        sprintf(buffer, "%.3f", options->chroma_fire);
+        snprintf(buffer, sizeof(buffer) - 1, "%.3f", options->chroma_fire);
         break;
     case OPTION_ECHO_OFFSET:
-        sprintf(buffer, "%d", options->echo);
+        snprintf(buffer, sizeof(buffer) - 1, "%d", options->echo);
         break;
     case OPTION_SKEW:
-        sprintf(buffer, "%d", options->skew);
+        snprintf(buffer, sizeof(buffer) - 1, "%d", options->skew);
         break;
     case OPTION_HORIZONTAL_INSTABILITY:
-        sprintf(buffer, "%d", options->wobble);
+        snprintf(buffer, sizeof(buffer) - 1, "%d", options->wobble);
         break;
     }
 
-    printf("Current option: %s, value: %s\n", optionNames[currentOption], buffer);
+    snprintf(optionText, sizeof(optionText) - 1, "%s: %s",
+        optionNames[currentOption], buffer);
+    
+    updateWindowTitle();
 }
 
 static void keyInput(SDL_Scancode key, unsigned int mod)
@@ -246,6 +252,7 @@ static void keyInput(SDL_Scancode key, unsigned int mod)
         options->echo = LIBSECAM_DEFAULT_ECHO;
         options->skew = LIBSECAM_DEFAULT_SKEW;
         options->wobble = LIBSECAM_DEFAULT_WOBBLE;
+        printOption();
         break;
     case SDL_SCANCODE_0:
         options->luma_noise = 0.0;
@@ -254,6 +261,7 @@ static void keyInput(SDL_Scancode key, unsigned int mod)
         options->echo = 0;
         options->skew = 0;
         options->wobble = 0;
+        printOption();
         break;
     default:
         break;
@@ -285,17 +293,27 @@ static int process(void)
 
 static int framerateCounter = 0;
 static unsigned int framerateLastCheck = 0;
+static int framerateValue = -1;
+static float framerateAvg = -1.f;
 static char windowTitleBuffer[256];
+
+static void updateWindowTitle(void)
+{
+    snprintf(windowTitleBuffer, sizeof(windowTitleBuffer) - 1,
+        "UEIT [%d fps, %.2f ms avg] (%s)",
+        framerateValue, framerateAvg, optionText);
+
+    SDL_SetWindowTitle(window, windowTitleBuffer);
+}
 
 static void loop(void)
 {
     unsigned int ticks = SDL_GetTicks();
 
     if ((ticks - framerateLastCheck) > 1000) {
-        float avg = (ticks - framerateLastCheck) / (float) framerateCounter;
-
-        sprintf(windowTitleBuffer, "UEIT [%d fps, %.2f ms avg]", framerateCounter, avg);
-        SDL_SetWindowTitle(window, windowTitleBuffer);
+        framerateValue = framerateCounter;
+        framerateAvg = (ticks - framerateLastCheck) / (float) framerateCounter;
+        updateWindowTitle();
         framerateLastCheck = ticks;
         framerateCounter = 0;
     }
@@ -329,6 +347,8 @@ int main(int argc, char *argv[])
     }
 
     atexit(terminate);
+
+    printOption();
 
     while (process() == 0) {
         loop();
