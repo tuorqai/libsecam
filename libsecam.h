@@ -172,7 +172,7 @@ libsecam_options_t *libsecam_options(libsecam_t *self);
 #ifdef _WIN32
 
 typedef HANDLE libsecam_thread_t;
-typedef DWORD (*libsecam_thread_func_t)(LPVOID);
+typedef DWORD (WINAPI *libsecam_thread_func_t)(LPVOID);
 
 static void libsecam_create_thread(LPHANDLE threadp, libsecam_thread_func_t f, LPVOID a)
 {
