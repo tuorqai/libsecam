@@ -23,11 +23,18 @@ jobs:
   #     run: cmake --build build
 
   win32:
+    name: ${{ matrix.arch.name }}
     runs-on: windows-latest
     
     env:
       SDL_VERSION: 2.28.5
       SDL_IMAGE_VERSION: 2.8.2
+
+    strategy:
+      matrix:
+        arch:
+        - { name: win32, flags: -A Win32 }
+        - { name: win64, flags: -A x64 }
     
     steps:
     - uses: actions/checkout@v3
@@ -40,7 +47,7 @@ jobs:
         Expand-Archive C:\SDL_image.zip -DestinationPath C:\
 
     - name: Configure
-      run: cmake -A Win32 -B build -DCMAKE_PREFIX_PATH="C:/SDL2-$env:SDL_VERSION/cmake;C:/SDL2_image-$env:SDL_IMAGE_VERSION/cmake"
+      run: cmake ${{ matrix.arch.flags }} -B build -DCMAKE_PREFIX_PATH="C:/SDL2-$env:SDL_VERSION/cmake;C:/SDL2_image-$env:SDL_IMAGE_VERSION/cmake"
   
     - name: Build
       run: cmake --build build --config Release
@@ -50,5 +57,5 @@ jobs:
 
     - uses: actions/upload-artifact@v3
       with:
-        name: libsecam-win32-${{ github.sha }}
+        name: libsecam-${{ matrix.arch.name }}-${{ github.sha }}
         path: install
