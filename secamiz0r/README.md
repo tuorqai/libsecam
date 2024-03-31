@@ -16,7 +16,7 @@ utilizes `libsecam` to create _SECAM fire_ effect.
 
 #### Get secamiz0r
 
-* Download `libsecam-win32.zip` from the **Releases** tab.
+* Download latest release from the **Releases** tab. Make sure to pick the right build (`win64` will be the right choice in 99% of cases).
 * Unzip it somewhere. There should be `lib` folder which contains `secamiz0r.dll`.
 
 #### Test if it works
