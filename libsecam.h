@@ -23,32 +23,6 @@
 // Each pixel is a series of 4 bytes: red, green, blue and unused byte (XRGB).
 // Output is the same format.
 // Width should be divisible by 8, height should be divisible by 2.
-//
-// Version history:
-//      4.0     2024.03.30  Almost completely rewritten, added multithreading
-//      3.5a    2024.02.14  Minor updates
-//      3.5     2024.02.14  Update echo effect (no more dark image)
-//      3.4     2024.02.13  Separate stable shift option
-//      3.3     2023.11.20  apply_fire() updated
-//      3.2     2023.11.20  New fixes:
-//                          * Fires on cyan and yellow backgrounds
-//                          * Static shift: bright parts of image get shifted
-//      3.1     2023.11.20  New, more realistic chroma noise
-//      3.0     2023.11.20  Update 3:
-//                          * Add fires on luma edges
-//                          * Add fires on cyan background
-//                          * Removed features: luma fire, luma/chrome loss,
-//                            chroma shift
-//                          * Corresponding options made obsolete
-//      2.5     2023.11.19  Remove obsolete code, replace unnecessary bilerp()
-//                          by lerp(), better comments.
-//      2.4     2023.11.19  Const chroma_loss, randomized chroma shift,
-//                          no negative chroma fire sign
-//      2.3     2023.11.18  Update 2, Revision 3 (less color loss on RGB-YUV)
-//      2.2     2023.11.18  Update 2, Revision 2 (added _filter_to_buffer())
-//      2.1     2023.11.18  Update 2, Revision 1
-//      2.0     2023.11.18  Update 2
-//      1.0     2023.02.08  Initial release
 //------------------------------------------------------------------------------
 
 #ifndef TUORQAI_LIBSECAM_H
@@ -124,18 +98,6 @@ libsecam_options_t *libsecam_options(libsecam_t *self);
 
 #if !defined(LIBSECAM_FREE)
 #define LIBSECAM_FREE(p)            free(p)
-#endif
-
-#if !defined(LIBSECAM_RAND_MAX)
-#define LIBSECAM_RAND_MAX           RAND_MAX
-#endif
-
-#if !defined(LIBSECAM_SRAND)
-#define LIBSECAM_SRAND(s)           srand(s)
-#endif
-
-#if !defined(LIBSECAM_RAND)
-#define LIBSECAM_RAND()             rand()
 #endif
 
 #if !defined(LIBSECAM_NUM_THREADS)
@@ -642,3 +604,31 @@ unsigned char const *libsecam_filter(libsecam_t *self, unsigned char const *src)
 
 #endif // TUORQAI_LIBSECAM_H
 
+//------------------------------------------------------------------------------
+//
+// Version history:
+//      4.0     2024.03.30  Almost completely rewritten, added multithreading
+//      3.5a    2024.02.14  Minor updates
+//      3.5     2024.02.14  Update echo effect (no more dark image)
+//      3.4     2024.02.13  Separate stable shift option
+//      3.3     2023.11.20  apply_fire() updated
+//      3.2     2023.11.20  New fixes:
+//                          * Fires on cyan and yellow backgrounds
+//                          * Static shift: bright parts of image get shifted
+//      3.1     2023.11.20  New, more realistic chroma noise
+//      3.0     2023.11.20  Update 3:
+//                          * Add fires on luma edges
+//                          * Add fires on cyan background
+//                          * Removed features: luma fire, luma/chrome loss,
+//                            chroma shift
+//                          * Corresponding options made obsolete
+//      2.5     2023.11.19  Remove obsolete code, replace unnecessary bilerp()
+//                          by lerp(), better comments.
+//      2.4     2023.11.19  Const chroma_loss, randomized chroma shift,
+//                          no negative chroma fire sign
+//      2.3     2023.11.18  Update 2, Revision 3 (less color loss on RGB-YUV)
+//      2.2     2023.11.18  Update 2, Revision 2 (added _filter_to_buffer())
+//      2.1     2023.11.18  Update 2, Revision 1
+//      2.0     2023.11.18  Update 2
+//      1.0     2023.02.08  Initial release
+//------------------------------------------------------------------------------
