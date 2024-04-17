@@ -82,7 +82,7 @@ struct libsecam_params
 };
 
 void libsecam_perform(void *dst, void const *src, int width, int height,
-    struct libsecam_params const *params);
+    struct libsecam_params params);
 
 #if defined(__cplusplus)
 }
@@ -642,72 +642,161 @@ static int libsecam__b_from_yuv(float y, float u, float v)
     return libsecam__clamp((298.082 * y) + (516.412 * u) - 276.836, 0, 255);
 }
 
-static void libsecam__copy_even_line_as_yuv(unsigned char *dst,
-    unsigned char const *src, int width)
+static void libsecam__copy_pair_as_yuv(
+    unsigned char *dst_even, unsigned char *dst_odd,
+    unsigned char const *src_even, unsigned char const *src_odd,
+    int width)
 {
-    for (int x = 0; x < width; x += 2) {
-        float r0 = src[4 * (x + 0) + 0] / 255.0;
-        float g0 = src[4 * (x + 0) + 1] / 255.0;
-        float b0 = src[4 * (x + 0) + 2] / 255.0;
+    int i;
 
-        float r1 = src[4 * (x + 1) + 0] / 255.0;
-        float g1 = src[4 * (x + 1) + 1] / 255.0;
-        float b1 = src[4 * (x + 1) + 2] / 255.0;
+    for (i = 0; i < width; i += 2) {
+        float r0_even = src_even[4 * (i + 0) + 0] / 255.0;
+        float g0_even = src_even[4 * (i + 0) + 1] / 255.0;
+        float b0_even = src_even[4 * (i + 0) + 2] / 255.0;
 
-        dst[4 * (x + 0) + 0] = libsecam__y_from_rgb(r0, g0, b0);
-        dst[4 * (x + 0) + 1] = libsecam__v_from_rgb(r0, g0, b0);
+        float r1_even = src_even[4 * (i + 1) + 0] / 255.0;
+        float g1_even = src_even[4 * (i + 1) + 1] / 255.0;
+        float b1_even = src_even[4 * (i + 1) + 2] / 255.0;
 
-        dst[4 * (x + 1) + 0] = libsecam__y_from_rgb(r1, g1, b1);
-        dst[4 * (x + 1) + 1] = dst[4 * (x + 0) + 1];
+        float r0_odd = src_odd[4 * (i + 0) + 0] / 255.0;
+        float g0_odd = src_odd[4 * (i + 0) + 1] / 255.0;
+        float b0_odd = src_odd[4 * (i + 0) + 2] / 255.0;
+
+        float r1_odd = src_odd[4 * (i + 1) + 0] / 255.0;
+        float g1_odd = src_odd[4 * (i + 1) + 1] / 255.0;
+        float b1_odd = src_odd[4 * (i + 1) + 2] / 255.0;
+
+        float r_even = (r0_even + r1_even) / 2.f;
+        float g_even = (g0_even + g1_even) / 2.f;
+        float b_even = (b0_even + b1_even) / 2.f;
+
+        float r_odd = (r0_odd + r1_odd) / 2.f;
+        float g_odd = (g0_odd + g1_odd) / 2.f;
+        float b_odd = (b0_odd + b1_odd) / 2.f;
+
+        unsigned char y0_even = libsecam__y_from_rgb(r0_even, g0_even, b0_even);
+        unsigned char y1_even = libsecam__y_from_rgb(r1_even, g1_even, b1_even);
+        unsigned char d_even = abs(y1_even - y0_even);
+
+        unsigned char y0_odd = libsecam__y_from_rgb(r0_odd, g0_odd, b0_odd);
+        unsigned char y1_odd = libsecam__y_from_rgb(r1_odd, g1_odd, b1_odd);
+        unsigned char d_odd = abs(y1_odd - y0_odd);
+
+        unsigned char u = libsecam__u_from_rgb(r_odd, g_odd, b_odd);
+        unsigned char v = libsecam__v_from_rgb(r_even, g_even, b_even);
+
+        dst_even[4 * (i + 0) + 0] = y0_even;
+        dst_even[4 * (i + 0) + 1] = v;
+        dst_even[4 * (i + 0) + 2] = d_even;
+        dst_even[4 * (i + 0) + 3] = src_even[4 * (i + 0) + 3];
+
+        dst_even[4 * (i + 1) + 0] = y1_even;
+        dst_even[4 * (i + 1) + 1] = v;
+        dst_even[4 * (i + 1) + 2] = d_even;
+        dst_even[4 * (i + 1) + 3] = src_even[4 * (i + 1) + 3];
+
+        dst_odd[4 * (i + 0) + 0] = y0_odd;
+        dst_odd[4 * (i + 0) + 1] = u;
+        dst_odd[4 * (i + 0) + 2] = d_odd;
+        dst_odd[4 * (i + 0) + 3] = src_odd[4 * (i + 0) + 3];
+
+        dst_odd[4 * (i + 1) + 0] = y1_odd;
+        dst_odd[4 * (i + 1) + 1] = u;
+        dst_odd[4 * (i + 1) + 2] = d_odd;
+        dst_odd[4 * (i + 1) + 3] = src_odd[4 * (i + 1) + 3];
     }
 }
 
-static void libsecam__copy_odd_line_as_yuv(unsigned char *dst,
-    unsigned char const *src, int width)
+static int libsecam__is_blue_area(int u, int v)
 {
-    for (int x = 0; x < width; x++) {
-        float r0 = src[4 * (x + 0) + 0] / 255.0;
-        float g0 = src[4 * (x + 0) + 1] / 255.0;
-        float b0 = src[4 * (x + 0) + 2] / 255.0;
+    return (u > 28 && v < -28) ? (u - v) : 0;
+}
 
-        float r1 = src[4 * (x + 1) + 0] / 255.0;
-        float g1 = src[4 * (x + 1) + 1] / 255.0;
-        float b1 = src[4 * (x + 1) + 2] / 255.0;
+static int libsecam__is_red_area(int u, int v)
+{
+    return (v > 56 && u < -14) ? (v - u) : 0;
+}
 
-        dst[4 * (x + 0) + 0] = libsecam__y_from_rgb(r0, g0, b0);
-        dst[4 * (x + 0) + 1] = libsecam__u_from_rgb(r0, g0, b0);
+static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
+    int width, struct libsecam_params const *params)
+{
+    int i;
 
-        dst[4 * (x + 1) + 0] = libsecam__y_from_rgb(r1, g1, b1);
-        dst[4 * (x + 1) + 1] = dst[4 * (x + 0) + 1];
+    int d0 = 0;
+
+    int blue_fire = 0;
+    int blue_attenuation = 0;
+
+    int red_fire = 0;
+    int red_attenuation = 0;
+
+    int noise = params->noise * 224;
+    int color_noise = params->noise * 256;
+
+    for (i = 0; i < (width - 1); i++) {
+        int y_even = even[4 * i + 0];
+        int y_odd = odd[4 * i + 0];
+        int u = odd[4 * i + 1] - 128;
+        int v = even[4 * i + 1] - 128;
+        int d1 = even[4 * i + 2];
+        int r0 = rand();
+        int r1 = rand();
+        float rf0 = r0 / (float) RAND_MAX;
+        float rf1 = r1 / (float) RAND_MAX;
+
+        // Oversaturation: increase color intensity by 25%.
+        u += u / 4;
+        v += v / 4;
+
+        float cd = (u - v) / 224.f;
+
+        // Noise.
+        if (noise) {
+            y_even += (r0 % noise) - (noise / 2);
+            y_odd += (r1 % noise) - (noise / 2);
+            u += (r0 % color_noise) - (color_noise / 2);
+            v += (r1 % color_noise) - (color_noise / 2);
+        }
+
+        if (blue_fire > 0) {
+            u += blue_fire;
+        } else {
+            blue_fire = (512 + (r0 % 256)) * -cd;
+            blue_attenuation = 4 + (r1 % 16);
+        }
+
+        if (red_fire > 0) {
+            v += red_fire;
+        } else {
+            red_fire = (512 + (r0 % 256)) * cd;
+            red_attenuation = 4 + (r1 % 16);
+        }
+
+        blue_fire -= blue_attenuation;
+        red_fire -= red_attenuation;
+
+        even[4 * i + 0] = libsecam__clamp(y_even, 16, 235);
+        even[4 * i + 1] = libsecam__clamp(v + 128, 16, 240);
+
+        odd[4 * i + 0] = libsecam__clamp(y_odd, 16, 235);
+        odd[4 * i + 1] = libsecam__clamp(u + 128, 16, 240);
+
+        d0 = d1;
     }
 }
 
-static void libsecam__filter_line(unsigned char *line, int width)
-{
-    for (int x = 0; x < width; x++) {
-        int y = line[4 * (x + 0) + 0];
-        int c = line[4 * (x + 0) + 1];
-
-        y += (libsecam_fastrand() % 64) - 32;
-        c += (libsecam_fastrand() % 128) - 64;
-
-        line[4 * (x + 0) + 0] = libsecam__clamp(y, 16, 235);
-        line[4 * (x + 0) + 1] = libsecam__clamp(c, 16, 240);
-    }
-}
-
-static void libsecam__convert_line_pair_to_rgb(unsigned char *even,
+static void libsecam__convert_pair_to_rgb(unsigned char *even,
     unsigned char *odd, int width)
 {
     int i, j;
 
-    int loss = 4;
+    int luma_loss = 4;
+    int chroma_loss = 8;
 
-    even[0] = even[4 * (width - 1) + 0] = 0;
-    odd[0] = odd[4 * (width - 1) + 0] = 0;
-
-    even[1] = even[4 * (width - 1) + 1] = 240;
-    odd[1] = odd[4 * (width - 1) + 1] = 240;
+    even[4 * (width - 1) + 0] = 0;
+    even[4 * (width - 1) + 1] = 128;
+    odd[4 * (width - 1) + 0] = 0;
+    odd[4 * (width - 1) + 1] = 128;
 
     for (i = 0; i < width; i++) {
         float y_even = 0.f;
@@ -715,35 +804,35 @@ static void libsecam__convert_line_pair_to_rgb(unsigned char *even,
         float u = 0.f;
         float v = 0.f;
 
-        for (j = 0; j < loss; j++) {
-            int y_idx = libsecam__clamp(i + j, 0, width - 1);
-            int uv_idx = libsecam__clamp(i + (j * 2), 0, width - 1);
-
-            y_even += even[4 * y_idx + 0];
-            y_odd += odd[4 * y_idx + 0];
-            u += odd[4 * (uv_idx + 0) + 1] + odd[4 * (uv_idx + 1) + 1];
-            v += even[4 * (uv_idx + 0) + 1] + even[4 * (uv_idx + 1) + 1];
+        for (j = 0; j < luma_loss; j++) {
+            int idx = libsecam__clamp(i + j, 0, width - 1);
+            y_even += even[4 * idx + 0];
+            y_odd += odd[4 * idx + 0];
         }
 
-        y_even /= 255.f * loss;
-        y_odd /= 255.f * loss;
-        u /= 255.f * 2.f * loss;
-        v /= 255.f * 2.f * loss;
+        for (j = 0; j < chroma_loss; j++) {
+            int idx = libsecam__clamp(i + j, 0, width - 1);
+            u += odd[4 * idx + 1];
+            v += even[4 * idx + 1];
+        }
+
+        y_even /= 255.f * luma_loss;
+        y_odd /= 255.f * luma_loss;
+        u /= 255.f * chroma_loss;
+        v /= 255.f * chroma_loss;
 
         even[4 * i + 0] = libsecam__r_from_yuv(y_even, u, v);
         even[4 * i + 1] = libsecam__g_from_yuv(y_even, u, v);
         even[4 * i + 2] = libsecam__b_from_yuv(y_even, u, v);
-        even[4 * i + 3] = 255;
 
         odd[4 * i + 0] = libsecam__r_from_yuv(y_odd, u, v);
         odd[4 * i + 1] = libsecam__g_from_yuv(y_odd, u, v);
         odd[4 * i + 2] = libsecam__b_from_yuv(y_odd, u, v);
-        odd[4 * i + 3] = 255;
     }
 }
 
 void libsecam_perform(void *dst, void const *src, int width, int height,
-    const struct libsecam_params *params)
+    struct libsecam_params params)
 {
     unsigned char *out = dst;
     unsigned char const *in = src;
@@ -752,13 +841,9 @@ void libsecam_perform(void *dst, void const *src, int width, int height,
         int even = 4 * width * (y + 0);
         int odd = 4 * width * (y + 1);
 
-        libsecam__copy_even_line_as_yuv(&out[even], &in[even], width);
-        libsecam__copy_odd_line_as_yuv(&out[odd], &in[odd], width);
-
-        libsecam__filter_line(&out[even], width);
-        libsecam__filter_line(&out[odd], width);
-
-        libsecam__convert_line_pair_to_rgb(&out[even], &out[odd], width);
+        libsecam__copy_pair_as_yuv(&out[even], &out[odd], &in[even], &in[odd], width);
+        libsecam__filter_pair(&out[even], &out[odd], width, &params);
+        libsecam__convert_pair_to_rgb(&out[even], &out[odd], width);
     }
 }
 
