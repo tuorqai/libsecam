@@ -604,43 +604,65 @@ unsigned char const *libsecam_filter(libsecam_t *self, unsigned char const *src)
     return self->output;
 }
 
+//------------------------------------------------------------------------------
+// Utility functions
+
 static int libsecam__clamp(int x, int a, int b)
 {
     return x < a ? a : (x >= b ? b : x);
 }
 
-static int libsecam__y_from_rgb(float r, float g, float b)
+//------------------------------------------------------------------------------
+// YCbCr color space
+
+static unsigned char libsecam__rgb_to_ycbcr_y(float r, float g, float b)
 {
-    /* range: 16 to 235 */
     return 16 + (65.7380 * r) + (129.057 * g) + (25.0640 * b);
 }
 
-static int libsecam__u_from_rgb(float r, float g, float b)
+static unsigned char libsecam__rgb_to_ycbcr_u(float r, float g, float b)
 {
-    /* range: 16 to 240 (center at 128) */
     return 128 - (37.9450 * r) - (74.4940 * g) + (112.439 * b);
 }
 
-static int libsecam__v_from_rgb(float r, float g, float b)
+static unsigned char libsecam__rgb_to_ycbcr_v(float r, float g, float b)
 {
-    /* range: 16 to 240 (center at 128) */
     return 128 + (112.439 * r) - (94.1540 * g) - (18.2850 * b);
 }
 
-static int libsecam__r_from_yuv(float y, float u, float v)
+static void libsecam__ycbcr_to_rgb(unsigned char *rgb, float y, float u, float v)
 {
-    return libsecam__clamp((298.082 * y) + (408.583 * v) - 222.921, 0, 255);
+    rgb[0] = libsecam__clamp((298.082 * y) + (408.583 * v) - 222.921, 0, 255);
+    rgb[1] = libsecam__clamp((298.082 * y) - (100.291 * u) - (208.120 * v) + 135.576, 0, 255);
+    rgb[2] = libsecam__clamp((298.082 * y) + (516.412 * u) - 276.836, 0, 255);
 }
 
-static int libsecam__g_from_yuv(float y, float u, float v)
+//------------------------------------------------------------------------------
+// YDbDr color space
+
+static unsigned char libsecam__rgb_to_ydbdr_y(float r, float g, float b)
 {
-    return libsecam__clamp((298.082 * y) - (100.291 * u) - (208.120 * v) + 135.576, 0, 255);
+    return (76.25 * r) + (149.68 * g) + (29.07 * b);
 }
 
-static int libsecam__b_from_yuv(float y, float u, float v)
+static unsigned char libsecam__rgb_to_ydbdr_u(float r, float g, float b)
 {
-    return libsecam__clamp((298.082 * y) + (516.412 * u) - 276.836, 0, 255);
+    return 128 - (43.00 * r) - (86.500 * g) + (127.5 * b);
 }
+
+static unsigned char libsecam__rgb_to_ydbdr_v(float r, float g, float b)
+{
+    return 128 - (127.5 * r) + (106.70 * g) + (20.80 * b);
+}
+
+static void libsecam__ydbdr_to_rgb(unsigned char *rgb, float y, float u, float v)
+{
+    rgb[0] = libsecam__clamp(255.0 * y + 0.06300 * u - 357.531 * v + 178.734, 0, 255);
+    rgb[1] = libsecam__clamp(255.0 * y - 87.7880 * u + 182.126 * v - 47.1690, 0, 255);
+    rgb[2] = libsecam__clamp(255.0 * y + 451.869 * u - 0.05400 * v - 225.908, 0, 255);
+}
+
+//------------------------------------------------------------------------------
 
 static void libsecam__copy_pair_as_yuv(
     unsigned char *dst_even, unsigned char *dst_odd,
@@ -674,35 +696,29 @@ static void libsecam__copy_pair_as_yuv(
         float g_odd = (g0_odd + g1_odd) / 2.f;
         float b_odd = (b0_odd + b1_odd) / 2.f;
 
-        unsigned char y0_even = libsecam__y_from_rgb(r0_even, g0_even, b0_even);
-        unsigned char y1_even = libsecam__y_from_rgb(r1_even, g1_even, b1_even);
-        unsigned char d_even = abs(y1_even - y0_even);
+        unsigned char y0_even = libsecam__rgb_to_ydbdr_y(r0_even, g0_even, b0_even);
+        unsigned char y1_even = libsecam__rgb_to_ydbdr_y(r1_even, g1_even, b1_even);
 
-        unsigned char y0_odd = libsecam__y_from_rgb(r0_odd, g0_odd, b0_odd);
-        unsigned char y1_odd = libsecam__y_from_rgb(r1_odd, g1_odd, b1_odd);
-        unsigned char d_odd = abs(y1_odd - y0_odd);
+        unsigned char y0_odd = libsecam__rgb_to_ydbdr_y(r0_odd, g0_odd, b0_odd);
+        unsigned char y1_odd = libsecam__rgb_to_ydbdr_y(r1_odd, g1_odd, b1_odd);
 
-        unsigned char u = libsecam__u_from_rgb(r_odd, g_odd, b_odd);
-        unsigned char v = libsecam__v_from_rgb(r_even, g_even, b_even);
+        unsigned char u = libsecam__rgb_to_ydbdr_u(r_odd, g_odd, b_odd);
+        unsigned char v = libsecam__rgb_to_ydbdr_v(r_even, g_even, b_even);
 
         dst_even[4 * (i + 0) + 0] = y0_even;
         dst_even[4 * (i + 0) + 1] = v;
-        dst_even[4 * (i + 0) + 2] = d_even;
         dst_even[4 * (i + 0) + 3] = src_even[4 * (i + 0) + 3];
 
         dst_even[4 * (i + 1) + 0] = y1_even;
         dst_even[4 * (i + 1) + 1] = v;
-        dst_even[4 * (i + 1) + 2] = d_even;
         dst_even[4 * (i + 1) + 3] = src_even[4 * (i + 1) + 3];
 
         dst_odd[4 * (i + 0) + 0] = y0_odd;
         dst_odd[4 * (i + 0) + 1] = u;
-        dst_odd[4 * (i + 0) + 2] = d_odd;
         dst_odd[4 * (i + 0) + 3] = src_odd[4 * (i + 0) + 3];
 
         dst_odd[4 * (i + 1) + 0] = y1_odd;
         dst_odd[4 * (i + 1) + 1] = u;
-        dst_odd[4 * (i + 1) + 2] = d_odd;
         dst_odd[4 * (i + 1) + 3] = src_odd[4 * (i + 1) + 3];
     }
 }
@@ -722,23 +738,20 @@ static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
 {
     int i;
 
-    int d0 = 0;
-
     int blue_fire = 0;
     int blue_attenuation = 0;
 
     int red_fire = 0;
     int red_attenuation = 0;
 
-    int noise = params->noise * 224;
-    int color_noise = params->noise * 256;
+    int noise = params->noise * 448;
+    int color_noise = params->noise * 512;
 
     for (i = 0; i < (width - 1); i++) {
         int y_even = even[4 * i + 0];
         int y_odd = odd[4 * i + 0];
         int u = odd[4 * i + 1] - 128;
         int v = even[4 * i + 1] - 128;
-        int d1 = even[4 * i + 2];
         int r0 = rand();
         int r1 = rand();
         float rf0 = r0 / (float) RAND_MAX;
@@ -748,8 +761,6 @@ static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
         u += u / 4;
         v += v / 4;
 
-        float cd = (u - v) / 224.f;
-
         // Noise.
         if (noise) {
             y_even += (r0 % noise) - (noise / 2);
@@ -757,19 +768,24 @@ static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
             u += (r0 % color_noise) - (color_noise / 2);
             v += (r1 % color_noise) - (color_noise / 2);
         }
-
+#if 0
         if (blue_fire > 0) {
             u += blue_fire;
         } else {
-            blue_fire = (512 + (r0 % 256)) * -cd;
-            blue_attenuation = 4 + (r1 % 16);
+            if (abs(y_odd - (u + 128)) >= 252) {
+                blue_fire = 256 + (r0 % 64);
+                blue_attenuation = 4 + (r0 % 8);
+            }
         }
-
+#endif
         if (red_fire > 0) {
-            v += red_fire;
+            v -= red_fire;
         } else {
-            red_fire = (512 + (r0 % 256)) * cd;
-            red_attenuation = 4 + (r1 % 16);
+            // if (abs(y_even - (v + 128)) >= 252) {
+            if (y_even > 224 && v > 0) {
+                red_fire = 256 + (r1 % 64);
+                red_attenuation = 4 + (r1 % 8);
+            }
         }
 
         blue_fire -= blue_attenuation;
@@ -780,8 +796,6 @@ static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
 
         odd[4 * i + 0] = libsecam__clamp(y_odd, 16, 235);
         odd[4 * i + 1] = libsecam__clamp(u + 128, 16, 240);
-
-        d0 = d1;
     }
 }
 
@@ -821,13 +835,8 @@ static void libsecam__convert_pair_to_rgb(unsigned char *even,
         u /= 255.f * chroma_loss;
         v /= 255.f * chroma_loss;
 
-        even[4 * i + 0] = libsecam__r_from_yuv(y_even, u, v);
-        even[4 * i + 1] = libsecam__g_from_yuv(y_even, u, v);
-        even[4 * i + 2] = libsecam__b_from_yuv(y_even, u, v);
-
-        odd[4 * i + 0] = libsecam__r_from_yuv(y_odd, u, v);
-        odd[4 * i + 1] = libsecam__g_from_yuv(y_odd, u, v);
-        odd[4 * i + 2] = libsecam__b_from_yuv(y_odd, u, v);
+        libsecam__ydbdr_to_rgb(&even[4 * i], y_even, u, v);
+        libsecam__ydbdr_to_rgb(&odd[4 * i], y_odd, u, v);
     }
 }
 
