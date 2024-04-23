@@ -258,6 +258,22 @@ static int libsecam__is_red_area(int u, int v)
     return (v > 56 && u < -14) ? (v - u) : 0;
 }
 
+static double frand(void)
+{
+    double r = -1.0 + (rand() / (double) RAND_MAX) * 2.0;
+
+    return r * r * r * r * r;
+}
+
+static unsigned long libsecam__juice(int j)
+{
+    j ^= j << 13;
+    j ^= j >> 17;
+    j ^= j << 5;
+
+    return j;
+}
+
 static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
     int width, struct libsecam_params const *params)
 {
@@ -271,16 +287,25 @@ static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
 
     int noise = params->noise * 448;
     int color_noise = params->noise * 512;
+    int rare_event = (params->noise > 0) ? (8192 / params->noise) : 0;
+
+    int echo = 4;
+
+    unsigned long r_even = rand();
+    unsigned long r_odd = rand();
+
+    int u_prev = odd[4 * i + 1] - 128;
+    int v_prev = even[4 * i + 1] - 128;
 
     for (i = 0; i < (width - 1); i++) {
         int y_even = even[4 * i + 0];
         int y_odd = odd[4 * i + 0];
         int u = odd[4 * i + 1] - 128;
         int v = even[4 * i + 1] - 128;
-        int r0 = rand();
-        int r1 = rand();
-        float rf0 = r0 / (float) RAND_MAX;
-        float rf1 = r1 / (float) RAND_MAX;
+        int u0, v0;
+
+        r_even = libsecam__juice(r_even);
+        r_odd = libsecam__juice(r_odd);
 
         // Oversaturation: increase color intensity by 25%.
         u += u / 4;
@@ -288,28 +313,41 @@ static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
 
         // Noise.
         if (noise) {
-            y_even += (r0 % noise) - (noise / 2);
-            y_odd += (r1 % noise) - (noise / 2);
-            u += (r0 % color_noise) - (color_noise / 2);
-            v += (r1 % color_noise) - (color_noise / 2);
+            int n_even = (r_even % noise) - (noise / 2);
+            int n_odd = (r_odd % noise) - (noise / 2);
+            int n_u = (r_even % color_noise) - (color_noise / 2);
+            int n_v = (r_odd % color_noise) - (color_noise / 2);
+
+            y_even += n_even;
+            y_odd += n_odd;
+            u += n_u;
+            v += n_v;
         }
+
+        // Echo.
+        if (echo && i >= echo) {
+            y_even += (y_even - even[4 * (i - echo)]) / 2;
+            y_odd += (y_odd - odd[4 * (i - echo)]) / 2;
+        }
+
+        u0 = u;
+        v0 = v;
 #if 0
         if (blue_fire > 0) {
             u += blue_fire;
         } else {
-            if (abs(y_odd - (u + 128)) >= 252) {
-                blue_fire = 256 + (r0 % 64);
-                blue_attenuation = 4 + (r0 % 8);
+            if ((u - u_prev) > 108) {
+                blue_fire = 256 + (r_odd % 64);
+                blue_attenuation = 4 + (r_odd % 8);
             }
         }
 #endif
         if (red_fire > 0) {
             v -= red_fire;
         } else {
-            // if (abs(y_even - (v + 128)) >= 252) {
-            if (y_even > 224 && v > 0) {
-                red_fire = 256 + (r1 % 64);
-                red_attenuation = 4 + (r1 % 8);
+            if (abs(v - v_prev) * (y_even / 256.0) > 108) {
+                red_fire = 256 + (r_even % 64);
+                red_attenuation = 4 + (r_even % 8);
             }
         }
 
@@ -321,6 +359,13 @@ static void libsecam__filter_pair(unsigned char *even, unsigned char *odd,
 
         odd[4 * i + 0] = libsecam__clamp(y_odd, 16, 235);
         odd[4 * i + 1] = libsecam__clamp(u + 128, 16, 240);
+
+        u_prev = u0;
+        v_prev = v0;
+
+        if (i % 4 == 0) {
+
+        }
     }
 }
 

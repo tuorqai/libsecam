@@ -7,26 +7,10 @@
 
 struct secamiz0r
 {
-    libsecam_t *libsecam;
     unsigned int width;
     unsigned int height;
     double intensity;
 };
-
-static void update_libsecam_options(libsecam_t *libsecam, double intensity)
-{
-    libsecam_options_t *options = libsecam_options(libsecam);
-
-    double const x = intensity;
-    double const xs = x * x;
-
-    options->luma_noise = 0.05 + (0.95 * xs);
-    options->chroma_noise = 0.25 + (0.75 * xs);
-    options->chroma_fire = xs;
-    options->echo = (int) ceilf(6.0 * x);
-    options->skew = options->echo / 2;
-    options->wobble = options->echo / 2;
-}
 
 int f0r_init(void)
 {
@@ -71,28 +55,16 @@ f0r_instance_t f0r_construct(unsigned int width, unsigned int height)
         return 0;
     }
 
-    instance->libsecam = libsecam_init(width, height);
-
-    if (!instance->libsecam) {
-        free(instance);
-        return 0;
-    }
-
     instance->width = width;
     instance->height = height;
     instance->intensity = 0.25;
-
-    update_libsecam_options(instance->libsecam, instance->intensity);
 
     return instance;
 }
 
 void f0r_destruct(f0r_instance_t instance)
 {
-    struct secamiz0r *secamiz0r = instance;
-
-    libsecam_close(secamiz0r->libsecam);
-    free(secamiz0r);
+    free(instance);
 }
 
 void f0r_set_param_value(f0r_instance_t instance, f0r_param_t param, int index)
@@ -104,8 +76,6 @@ void f0r_set_param_value(f0r_instance_t instance, f0r_param_t param, int index)
         secamiz0r->intensity = *((double *) param);
         break;
     }
-
-    update_libsecam_options(secamiz0r->libsecam, secamiz0r->intensity);
 }
 
 void f0r_get_param_value(f0r_instance_t instance, f0r_param_t param, int index)
@@ -123,20 +93,29 @@ void f0r_update(f0r_instance_t instance, double time, uint32_t const *input, uin
 {
     struct secamiz0r *secamiz0r = instance;
 
+    struct libsecam_params params = {
+        .noise = secamiz0r->intensity,
+    };
+
 #ifdef ENABLE_TIME_TEST
-    secamiz0r->intensity = fmod(time, 10000.0) / 10000.0;
-    update_libsecam_options(secamiz0r->libsecam, secamiz0r->intensity);
+    double d = fmod(time, 10000.0) / 10000.0;
+    params.noise = d;
+    // secamiz0r->intensity = fmod(time, 10000.0) / 10000.0;
+    // update_libsecam_options(secamiz0r->libsecam, secamiz0r->intensity);
 #endif
 
-    libsecam_filter_to_buffer(secamiz0r->libsecam,
-        (unsigned char const *) input,
-        (unsigned char *) output);
+    // libsecam_filter_to_buffer(secamiz0r->libsecam,
+    //     (unsigned char const *) input,
+    //     (unsigned char *) output);
+    
+    libsecam_perform(output, input, secamiz0r->width, secamiz0r->height, params);
 
 #ifdef ENABLE_TIME_TEST
-    int w = floor(secamiz0r->intensity * secamiz0r->width);
+    int w = floor(d * secamiz0r->width);
     for (int x = 0; x < w; x++) {
-        for (int y = (secamiz0r->height - 8); y < secamiz0r->height; y++) {
-            output[y * secamiz0r->width + x] = 0xffff00ff;
+        output[(secamiz0r->height - 8) * secamiz0r->width + x] = 0xffffffff;
+        for (int y = (secamiz0r->height - 7); y < secamiz0r->height; y++) {
+            output[y * secamiz0r->width + x] = 0xffff0000;
         }
     }
 #endif
