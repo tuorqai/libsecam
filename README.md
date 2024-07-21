@@ -1,6 +1,8 @@
 libsecam
 ========
 
+**Superseded by https://github.com/tuorqai/secamiz0r-ng**
+
 ## Description
 
 This header-only library provides a video effect simulating so-called _SECAM
